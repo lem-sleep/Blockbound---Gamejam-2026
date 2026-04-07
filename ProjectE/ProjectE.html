@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>ProjectE — Combined Mini-Terraria</title>
+  <style>
+    html,body{height:100%;margin:0;background:#82c0ff;font-family:Arial,Helvetica,sans-serif;overflow:hidden}
+    #game{display:block}
+    .hud { position:fixed; left:0; top:0; width:100%; pointer-events:none; z-index:10 }
+    .controls-hint{position:fixed; bottom:18px; right:18px; background:rgba(0,0,0,0.6); color:#fff; padding:10px 12px; border-radius:8px; font-family:monospace; font-size:12px; pointer-events:none; z-index:10}
+    .hotbar { position:fixed; left:50%; transform:translateX(-50%); bottom:14px; display:flex; gap:8px; pointer-events:auto; z-index:10 }
+    .slot { width:52px; height:52px; background:rgba(0,0,0,0.6); border:2px solid rgba(255,255,255,0.08); box-shadow:0 4px 8px rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; border-radius:6px; position:relative }
+    .slot.selected { border-color:#ffd64d; box-shadow:0 6px 14px rgba(255,214,77,0.08), 0 0 0 4px rgba(255,214,77,0.04) }
+    .slot .count{ position:absolute; bottom:2px; right:4px; font-size:13px }
+    .menu { position:fixed; left:50%; top:10%; transform:translateX(-50%); width:760px; max-width:95%; background:rgba(10,10,10,0.92); color:#fff; padding:14px; border-radius:10px; display:none; pointer-events:auto; z-index:50 }
+    .menu .row{display:flex; gap:12px}
+    .menu .panel{background:#1e1e1e; padding:10px; border-radius:6px; flex:1}
+    .recipe{display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid rgba(255,255,255,0.03); align-items:center}
+    .btn{background:#3b7f3b;padding:8px 16px;border-radius:6px;border:none;color:#fff;cursor:pointer;font-size:14px;transition:background 0.15s}
+    .btn:hover{background:#4a9a4a}
+    .btn.disabled{opacity:0.4;background:#444;cursor:default}
+    .btn.disabled:hover{background:#444}
+    .btn-red{background:#8b3b3b}
+    .btn-red:hover{background:#a04a4a}
+    .btn-yellow{background:#7f6a1e}
+    .btn-yellow:hover{background:#9a801e}
+    .btn-blue{background:#3b5f8b}
+    .btn-blue:hover{background:#4a70a0}
+    .title{font-weight:700;color:#ffd64d;margin-bottom:8px}
+    .overlay{position:fixed;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:90;display:none}
+    #mainMenu{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(5,5,10,0.95);color:#fff;padding:32px 40px;border-radius:12px;display:flex;flex-direction:column;gap:14px;align-items:center;z-index:100;min-width:300px;border:1px solid rgba(255,214,77,0.2)}
+    #mainMenu .menu-title{font-size:32px;color:#ffd64d;font-weight:700;margin-bottom:4px}
+    #mainMenu .menu-sub{color:#999;font-size:14px;margin-bottom:8px}
+    #mainMenu .btn{width:100%;text-align:center;padding:10px 16px;font-size:16px}
+    #pauseMenu{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(5,5,10,0.95);color:#fff;padding:28px 36px;border-radius:12px;display:none;flex-direction:column;gap:12px;align-items:center;z-index:100;min-width:260px;border:1px solid rgba(255,214,77,0.2)}
+    #pauseMenu .menu-title{font-size:26px;color:#ffd64d;font-weight:700;margin-bottom:6px}
+    #pauseMenu .btn{width:100%;text-align:center;padding:10px 16px;font-size:15px}
+    /* Save slots panel */
+    #saveSlotPanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(5,5,10,0.95);color:#fff;padding:28px 36px;border-radius:12px;display:none;flex-direction:column;gap:10px;align-items:center;z-index:100;min-width:340px;max-width:420px;border:1px solid rgba(255,214,77,0.2)}
+    #saveSlotPanel .menu-title{font-size:22px;color:#ffd64d;font-weight:700;margin-bottom:6px}
+    .save-slot{width:100%;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color 0.15s}
+    .save-slot:hover{border-color:#ffd64d}
+    .save-slot .slot-info{text-align:left}
+    .save-slot .slot-name{font-weight:700;font-size:14px}
+    .save-slot .slot-date{font-size:11px;color:#888;margin-top:2px}
+    .save-slot .slot-empty{color:#666;font-style:italic}
+    .save-slot .delete-save{background:#5a2020;border:none;color:#f88;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer}
+    .save-slot .delete-save:hover{background:#7a3030}
+    /* Debug console */
+    #debugConsole{position:fixed;right:10px;top:10px;width:320px;max-height:80vh;background:rgba(10,10,10,0.95);color:#0f0;padding:12px;border-radius:8px;display:none;z-index:200;font-family:monospace;font-size:12px;border:1px solid #0f0;overflow-y:auto}
+    #debugConsole .debug-title{color:#ffd64d;font-size:14px;font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+    #debugConsole .debug-section{margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(0,255,0,0.2)}
+    #debugConsole .debug-section label{display:block;margin-bottom:4px;color:#aaa;font-size:11px}
+    #debugConsole input[type="number"],#debugConsole input[type="text"],#debugConsole select{background:#1a1a1a;color:#0f0;border:1px solid #333;padding:4px 6px;border-radius:4px;width:60px;font-family:monospace;font-size:12px}
+    #debugConsole select{width:auto}
+    #debugConsole .debug-btn{background:#1a3a1a;color:#0f0;border:1px solid #0f0;padding:4px 10px;border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;margin:2px}
+    #debugConsole .debug-btn:hover{background:#2a5a2a}
+    #debugConsole .debug-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap}
+    #toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#fff;padding:8px 18px;border-radius:6px;font-size:14px;z-index:300;display:none;pointer-events:none;transition:opacity 0.3s}
+  </style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div class="hud" id="hud" style="display:none">
+  <div class="controls-hint">WASD = Move | SPACE = Jump | Left Click = Mine | Right Click = Place | E = Inventory | 1-0 = Hotbar | ESC = Pause | F3 = Debug</div>
+  <div class="hotbar" id="hotbar"></div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Main Menu -->
+<div id="mainMenu">
+  <div class="menu-title">ProjectE</div>
+  <div class="menu-sub">A combined prototype</div>
+  <button class="btn" id="startGameBtn">Start Game</button>
+  <button class="btn btn-blue" id="loadGameBtn">Load Game</button>
+  <button class="btn btn-red" id="exitBtn">Exit</button>
+</div>
+
+<!-- Save Slot Panel (for both saving and loading) -->
+<div class="overlay" id="slotOverlay"></div>
+<div id="saveSlotPanel">
+  <div class="menu-title" id="slotPanelTitle">Load Game</div>
+  <div id="slotList"></div>
+  <button class="btn btn-red" id="slotBackBtn" style="margin-top:6px;width:100%;text-align:center">Back</button>
+</div>
+
+<!-- Pause Menu -->
+<div class="overlay" id="pauseOverlay"></div>
+<div id="pauseMenu">
+  <div class="menu-title">Paused</div>
+  <button class="btn" id="resumeBtn">Resume</button>
+  <button class="btn btn-yellow" id="saveGameBtn">Save Game</button>
+  <button class="btn btn-red" id="saveQuitBtn">Save & Quit</button>
+</div>
+
+<!-- Inventory / Crafting Menu -->
+<div class="menu" id="menu">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div class="title">Inventory & Crafting</div>
+    <button class="btn" id="closeMenu">Close [E]</button>
+  </div>
+  <div class="row">
+    <div class="panel" style="flex:0.6">
+      <div style="font-size:13px;color:#ccc;margin-bottom:8px">Inventory</div>
+      <div id="inventoryGrid" style="display:grid;grid-template-columns:repeat(10,1fr);gap:6px"></div>
+    </div>
+    <div class="panel" style="flex:0.4">
+      <div style="font-size:13px;color:#ccc;margin-bottom:8px">Crafting</div>
+      <div id="recipes"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Debug Console -->
+<div id="debugConsole">
+  <div class="debug-title">
+    <span>Debug Console [F3]</span>
+    <span id="debugFPS" style="color:#0f0">0 FPS</span>
+  </div>
+  <div class="debug-section">
+    <label>Player Position</label>
+    <div id="debugPlayerPos" style="color:#0f0">x: 0, y: 0</div>
+    <label style="margin-top:4px">Teleport</label>
+    <div class="debug-row">
+      X: <input type="number" id="debugTpX" value="0" style="width:70px">
+      Y: <input type="number" id="debugTpY" value="0" style="width:70px">
+      <button class="debug-btn" id="debugTpBtn">Go</button>
+    </div>
+  </div>
+  <div class="debug-section">
+    <label>Player Speed</label>
+    <div class="debug-row">
+      Move: <input type="number" id="debugSpeed" value="220" style="width:70px">
+      Jump: <input type="number" id="debugJump" value="520" style="width:70px">
+      <button class="debug-btn" id="debugSpeedBtn">Set</button>
+    </div>
+  </div>
+  <div class="debug-section">
+    <label>Player Health</label>
+    <div class="debug-row">
+      <input type="number" id="debugHealth" value="100" min="0" max="999" style="width:70px">
+      <button class="debug-btn" id="debugHealthBtn">Set</button>
+    </div>
+  </div>
+  <div class="debug-section">
+    <label>Spawn Item</label>
+    <div class="debug-row">
+      <select id="debugItemType">
+        <option value="wood">Wood</option>
+        <option value="stick">Stick</option>
+        <option value="stone">Stone</option>
+        <option value="wooden_axe">Wooden Axe</option>
+        <option value="wooden_pickaxe">Wooden Pickaxe</option>
+        <option value="stone_axe">Stone Axe</option>
+        <option value="stone_pickaxe">Stone Pickaxe</option>
+      </select>
+      x<input type="number" id="debugItemCount" value="10" min="1" max="999" style="width:50px">
+      <button class="debug-btn" id="debugSpawnBtn">Give</button>
+    </div>
+  </div>
+  <div class="debug-section">
+    <label>World</label>
+    <div class="debug-row">
+      <button class="debug-btn" id="debugRegenBtn">Regenerate World</button>
+      <button class="debug-btn" id="debugClearInv">Clear Inventory</button>
+    </div>
+    <div class="debug-row" style="margin-top:4px">
+      <label style="margin:0"><input type="checkbox" id="debugNoclip"> Noclip</label>
+      <label style="margin:0"><input type="checkbox" id="debugGodmode"> Godmode</label>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// CANVAS
+// ============================================================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+function resize(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const TILE = 32;
+const WORLD_W = 200;
+const WORLD_H = 60;
+const MAX_SAVE_SLOTS = 5;
+
+// ============================================================
+// GAME STATE
+// ============================================================
+const STATE = { MENU: 0, PLAYING: 1, PAUSED: 2, INVENTORY: 3, SLOTS: 4 };
+let gameState = STATE.MENU;
+let currentSlot = null; // which save slot is currently active
+let slotMode = 'load'; // 'load' or 'save'
+
+// ============================================================
+// WORLD DATA
+// ============================================================
+let world = [];
+let drops = [];
+let saplings = [];
+
+// ============================================================
+// PLAYER
+// ============================================================
+let player = { x: 400, y: 100, w: 28, h: 28, vx: 0, vy: 0, onGround: false, health: 100 };
+let camera = { x: 0, y: 0 };
+let playerSpeed = 220;
+let playerJump = 520;
+let noclip = false;
+let godmode = false;
+
+let input = { left: false, right: false, jump: false };
+
+// ============================================================
+// MINING STATE
+// ============================================================
+let mining = { tx: -1, ty: -1, progress: 0 }; // tile being mined + progress 0..1
+
+// How long each tile type takes to mine (in seconds)
+function getMineTime(tileType, toolType) {
+  // Base times
+  const base = { 1: 2.0, 2: 1.5, 3: 1.2, 5: 0.6 }; // dirt, grass, trunk, leaves
+  let time = base[tileType] || 1.0;
+  // Tool speed bonuses
+  if ((tileType === 3 || tileType === 5) && (toolType === 'wooden_axe' || toolType === 'stone_axe')) {
+    time *= (toolType === 'stone_axe') ? 0.35 : 0.5;
+  }
+  if ((tileType === 1 || tileType === 2) && (toolType === 'wooden_pickaxe' || toolType === 'stone_pickaxe')) {
+    time *= (toolType === 'stone_pickaxe') ? 0.35 : 0.5;
+  }
+  return time;
+}
+
+// What a tile drops when mined + tree breaking logic
+function getTileDrop(tileType, tx, ty) {
+  // Tree chopping - break entire tree upward
+  if (tileType === 3) {  // trunk
+    breakWholeTree(tx, ty);
+    return 'wood';
+  }
+  if (tileType === 5) {  // leaves
+    return Math.random() < 0.4 ? 'stick' : 'wood';
+  }
+  if (tileType === 1 || tileType === 2) return null; // dirt/grass
+  return null;
+}
+
+// Break entire tree upward from the mined trunk tile + improved leaf coverage
+function breakWholeTree(tx, ty) {
+  // Break all trunk tiles upward
+  for (let y = ty; y >= 0; y--) {
+    if (world[y] && world[y][tx] === 3) {
+      world[y][tx] = 0;
+      drops.push({
+        x: tx * TILE + 8,
+        y: y * TILE + 8,
+        vy: -110 - Math.random() * 90,
+        vx: (Math.random() - 0.5) * 100,
+        type: 'wood'
+      });
+    } else {
+      break;
+    }
+  }
+
+  // Much better leaf breaking - wider and taller coverage
+  for (let dy = -5; dy <= 3; dy++) {
+    for (let dx = -4; dx <= 4; dx++) {
+      const lx = tx + dx;
+      const ly = ty + dy - 2;        // shift upward to better match leaf position
+
+      if (lx < 0 || lx >= WORLD_W || ly < 0 || ly >= WORLD_H) continue;
+
+      if (world[ly][lx] === 5) {     // if it's a leaf
+        world[ly][lx] = 0;
+
+        // 1 out of 3 leaves drop wood, sometimes stick
+        if (Math.random() < 0.33) {
+          drops.push({
+            x: lx * TILE + 6 + Math.random()*8,
+            y: ly * TILE + 6 + Math.random()*8,
+            vy: -70 - Math.random() * 110,
+            vx: (Math.random() - 0.5) * 110,
+            type: 'wood'
+          });
+        } 
+        else if (Math.random() < 0.45) {
+          drops.push({
+            x: lx * TILE + 8,
+            y: ly * TILE + 8,
+            vy: -50 - Math.random() * 80,
+            vx: (Math.random() - 0.5) * 70,
+            type: 'stick'
+          });
+        }
+      }
+    }
+  }
+}
+
+// ============================================================
+// HOTBAR / INVENTORY
+// ============================================================
+let hotbar = Array.from({ length: 10 }, () => ({ type: null, count: 0 }));
+let inventory = Array.from({ length: 20 }, () => ({ type: null, count: 0 }));
+let selected = 0;
+
+const recipes = [
+  { name: 'Wooden Axe',      result: 'wooden_axe',      cost: { stick: 3, wood: 2 } },
+  { name: 'Wooden Pickaxe',  result: 'wooden_pickaxe',  cost: { stick: 3, wood: 2 } },
+  { name: 'Stone Axe',       result: 'stone_axe',       cost: { stick: 2, stone: 3 } },
+  { name: 'Stone Pickaxe',   result: 'stone_pickaxe',   cost: { stick: 2, stone: 3 } },
+];
+
+// ============================================================
+// DOM REFERENCES
+// ============================================================
+const mainMenu = document.getElementById('mainMenu');
+const pauseMenu = document.getElementById('pauseMenu');
+const pauseOverlay = document.getElementById('pauseOverlay');
+const hudEl = document.getElementById('hud');
+const hotbarEl = document.getElementById('hotbar');
+const menuEl = document.getElementById('menu');
+const invGrid = document.getElementById('inventoryGrid');
+const recipesEl = document.getElementById('recipes');
+const debugConsole = document.getElementById('debugConsole');
+const toastEl = document.getElementById('toast');
+const saveSlotPanel = document.getElementById('saveSlotPanel');
+const slotOverlay = document.getElementById('slotOverlay');
+const slotList = document.getElementById('slotList');
+const slotPanelTitle = document.getElementById('slotPanelTitle');
+
+// ============================================================
+// TOAST MESSAGES
+// ============================================================
+let toastTimer = null;
+function showMessage(text, isError) {
+  toastEl.textContent = text;
+  toastEl.style.display = 'block';
+  toastEl.style.opacity = '1';
+  toastEl.style.background = isError ? 'rgba(140,30,30,0.9)' : 'rgba(0,0,0,0.8)';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastEl.style.opacity = '0';
+    setTimeout(() => { toastEl.style.display = 'none'; }, 300);
+  }, 2000);
+}
+
+// ============================================================
+// ITEM ICONS
+// ============================================================
+function getItemIcon(type) {
+  const icons = {
+    wood: '🪵', stick: '🌿', stone: '🪨',
+    wooden_axe: '🪓', wooden_pickaxe: '⛏️',
+    stone_axe: '🪓', stone_pickaxe: '⛏️'
+  };
+  return icons[type] || '';
+}
+
+function getItemName(type) {
+  const names = {
+    wood: 'Wood', stick: 'Stick', stone: 'Stone',
+    wooden_axe: 'Wooden Axe', wooden_pickaxe: 'Wooden Pick',
+    stone_axe: 'Stone Axe', stone_pickaxe: 'Stone Pick'
+  };
+  return names[type] || type;
+}
+
+// ============================================================
+// HOTBAR UI
+// ============================================================
+function buildHotbar() {
+  hotbarEl.innerHTML = '';
+  for (let i = 0; i < 10; i++) {
+    const s = document.createElement('div');
+    s.className = 'slot' + (i === selected ? ' selected' : '');
+    s.innerHTML = '<div style="pointer-events:none">' + getItemIcon(hotbar[i]?.type) + '</div><div class="count">' + (hotbar[i]?.count > 0 ? hotbar[i].count : '') + '</div>';
+    s.addEventListener('click', () => { selected = i; updateHotbarDOM(); });
+    hotbarEl.appendChild(s);
+  }
+}
+
+function updateHotbarDOM() {
+  const slots = hotbarEl.children;
+  for (let i = 0; i < slots.length; i++) {
+    slots[i].className = 'slot' + (i === selected ? ' selected' : '');
+    slots[i].querySelector('div').textContent = getItemIcon(hotbar[i]?.type);
+    slots[i].querySelector('.count').textContent = hotbar[i]?.count > 0 ? hotbar[i].count : '';
+  }
+}
+
+// ============================================================
+// INVENTORY UI
+// ============================================================
+function buildInventoryUI() {
+  invGrid.innerHTML = '';
+  for (let i = 0; i < inventory.length; i++) {
+    const d = inventory[i];
+    const el = document.createElement('div');
+    el.style.cssText = 'min-height:36px;background:#2a2a2a;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px';
+    el.textContent = d.type ? getItemIcon(d.type) + (d.count > 1 ? (' x' + d.count) : '') : '';
+    invGrid.appendChild(el);
+  }
+}
+
+function buildRecipes() {
+  recipesEl.innerHTML = '';
+  for (const r of recipes) {
+    const row = document.createElement('div');
+    row.className = 'recipe';
+    const left = document.createElement('div');
+    left.innerHTML = '<b>' + r.name + '</b><div style="font-size:12px;color:#bbb">' +
+      Object.entries(r.cost).map(([k, v]) => getItemIcon(k) + ' ' + v + ' ' + getItemName(k)).join(', ') + '</div>';
+    const btn = document.createElement('button');
+    btn.className = 'btn' + (canCraft(r) ? '' : ' disabled');
+    btn.textContent = 'Craft';
+    btn.addEventListener('click', () => {
+      if (canCraft(r)) {
+        for (const [k, v] of Object.entries(r.cost)) removeFromInventory(k, v);
+        addToInventory(r.result, 1);
+        showMessage(r.name + ' crafted!');
+        buildInventoryUI();
+        buildRecipes(); // refresh button states
+      } else {
+        showMessage('Missing materials', true);
+      }
+    });
+    row.append(left, btn);
+    recipesEl.appendChild(row);
+  }
+}
+
+// ============================================================
+// INVENTORY FUNCTIONS
+// ============================================================
+function addToInventory(type, amt) {
+  for (const s of hotbar) { if (s.type === type) { s.count += amt; updateHotbarDOM(); return true; } }
+  for (let i = 0; i < hotbar.length; i++) { if (!hotbar[i].type) { hotbar[i].type = type; hotbar[i].count = amt; updateHotbarDOM(); return true; } }
+  for (const s of inventory) { if (s.type === type) { s.count += amt; buildInventoryUI(); return true; } }
+  for (let i = 0; i < inventory.length; i++) { if (!inventory[i].type) { inventory[i].type = type; inventory[i].count = amt; buildInventoryUI(); return true; } }
+  return false;
+}
+
+function removeFromInventory(type, amt) {
+  let rem = amt;
+  for (const s of hotbar) {
+    if (s.type === type) { const t = Math.min(s.count, rem); s.count -= t; rem -= t; if (s.count === 0) s.type = null; }
+  }
+  for (let i = 0; i < inventory.length && rem > 0; i++) {
+    if (inventory[i].type === type) { const t = Math.min(inventory[i].count, rem); inventory[i].count -= t; rem -= t; if (inventory[i].count === 0) inventory[i].type = null; }
+  }
+  updateHotbarDOM(); buildInventoryUI();
+  return rem === 0;
+}
+
+function has(type, amt) {
+  let tot = 0;
+  for (const s of hotbar) if (s.type === type) tot += s.count;
+  for (const s of inventory) if (s.type === type) tot += s.count;
+  return tot >= amt;
+}
+
+function canCraft(r) { for (const [k, v] of Object.entries(r.cost)) if (!has(k, v)) return false; return true; }
+
+// ============================================================
+// SAVE / LOAD — MULTI-SLOT SYSTEM
+// ============================================================
+function getSaveKey(slot) { return 'projecte-save-' + slot; }
+
+function getSaveInfo(slot) {
+  const raw = localStorage.getItem(getSaveKey(slot));
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    return { slot, date: data.savedAt || 'Unknown date', exists: true };
+  } catch { return null; }
+}
+
+function getAllSaves() {
+  const saves = [];
+  for (let i = 1; i <= MAX_SAVE_SLOTS; i++) {
+    saves.push(getSaveInfo(i) || { slot: i, exists: false });
+  }
+  return saves;
+}
+
+function anySlotHasSave() {
+  for (let i = 1; i <= MAX_SAVE_SLOTS; i++) { if (localStorage.getItem(getSaveKey(i))) return true; }
+  return false;
+}
+
+function saveGame(slot) {
+  if (!slot) slot = currentSlot || 1;
+  try {
+    const data = {
+      player: { x: player.x, y: player.y, w: player.w, h: player.h, vy: player.vy, vx: player.vx, health: player.health },
+      world, hotbar, inventory, drops, saplings,
+      savedAt: new Date().toLocaleString()
+    };
+    localStorage.setItem(getSaveKey(slot), JSON.stringify(data));
+    currentSlot = slot;
+    showMessage('Saved to slot ' + slot + '!');
+  } catch (e) {
+    console.error(e);
+    showMessage('Save failed!', true);
+  }
+}
+
+function loadGame(slot) {
+  const raw = localStorage.getItem(getSaveKey(slot));
+  if (!raw) { showMessage('Slot ' + slot + ' is empty!', true); return false; }
+  try {
+    const data = JSON.parse(raw);
+    if (data.player) {
+      player.x = data.player.x; player.y = data.player.y;
+      player.w = data.player.w; player.h = data.player.h;
+      player.vx = data.player.vx || 0; player.vy = data.player.vy || 0;
+      player.health = data.player.health || 100;
+    }
+    if (data.world) world = data.world;
+    if (data.hotbar) hotbar = data.hotbar;
+    if (data.inventory) inventory = data.inventory;
+    if (data.drops) drops = data.drops; else drops = [];
+    if (data.saplings) saplings = data.saplings; else saplings = [];
+    currentSlot = slot;
+    buildHotbar(); buildInventoryUI(); updateHotbarDOM();
+    showMessage('Loaded slot ' + slot + '!');
+    return true;
+  } catch (e) {
+    console.error(e);
+    showMessage('Load failed!', true);
+    return false;
+  }
+}
+
+function deleteSave(slot) {
+  localStorage.removeItem(getSaveKey(slot));
+  showMessage('Slot ' + slot + ' deleted.');
+  buildSlotList();
+}
+
+// ============================================================
+// SAVE SLOT UI
+// ============================================================
+function openSlotPanel(mode, previousState) {
+  slotMode = mode;
+  slotPanelTitle.textContent = mode === 'load' ? 'Load Game' : 'Save Game';
+  buildSlotList();
+  saveSlotPanel.style.display = 'flex';
+  slotOverlay.style.display = 'block';
+  // Store what state to return to
+  saveSlotPanel._returnState = previousState;
+}
+
+function closeSlotPanel() {
+  saveSlotPanel.style.display = 'none';
+  slotOverlay.style.display = 'none';
+  const ret = saveSlotPanel._returnState;
+  if (ret === STATE.MENU) { gameState = STATE.MENU; mainMenu.style.display = 'flex'; }
+  else if (ret === STATE.PAUSED) { gameState = STATE.PAUSED; pauseMenu.style.display = 'flex'; pauseOverlay.style.display = 'block'; }
+}
+
+function buildSlotList() {
+  slotList.innerHTML = '';
+  const saves = getAllSaves();
+  for (const s of saves) {
+    const el = document.createElement('div');
+    el.className = 'save-slot';
+    if (s.exists) {
+      el.innerHTML = '<div class="slot-info"><div class="slot-name">Slot ' + s.slot + '</div><div class="slot-date">' + s.date + '</div></div>';
+      // Delete button
+      const del = document.createElement('button');
+      del.className = 'delete-save';
+      del.textContent = 'Delete';
+      del.addEventListener('click', ev => { ev.stopPropagation(); deleteSave(s.slot); });
+      el.appendChild(del);
+    } else {
+      el.innerHTML = '<div class="slot-info"><div class="slot-name">Slot ' + s.slot + '</div><div class="slot-empty">' + (slotMode === 'save' ? 'Empty — click to save here' : 'Empty') + '</div></div>';
+    }
+
+    el.addEventListener('click', () => {
+      if (slotMode === 'load') {
+        if (!s.exists) { showMessage('Slot ' + s.slot + ' is empty!', true); return; }
+        if (loadGame(s.slot)) {
+          saveSlotPanel.style.display = 'none';
+          slotOverlay.style.display = 'none';
+          pauseMenu.style.display = 'none';
+          pauseOverlay.style.display = 'none';
+          mainMenu.style.display = 'none';
+          hudEl.style.display = '';
+          gameState = STATE.PLAYING;
+        }
+      } else {
+        // Save mode
+        saveGame(s.slot);
+        buildSlotList(); // refresh dates
+      }
+    });
+    slotList.appendChild(el);
+  }
+}
+
+document.getElementById('slotBackBtn').addEventListener('click', closeSlotPanel);
+slotOverlay.addEventListener('click', closeSlotPanel);
+
+// ============================================================
+// WORLD GENERATION — Fixed & Reliable
+// ============================================================
+function generateWorld() {
+  world = [];
+  drops = [];
+  saplings = [];
+
+  const baseGround = Math.floor(WORLD_H * 0.58);
+  const surfaceY = [];
+
+  for (let x = 0; x < WORLD_W; x++) {
+    if (x === 0) {
+      surfaceY[x] = baseGround;
+    } else {
+      surfaceY[x] = Math.floor(surfaceY[x - 1]);
+
+      if (Math.random() < 0.09) {
+        surfaceY[x] += (Math.random() < 0.5 ? -1 : 1);
+      }
+
+      surfaceY[x] = Math.floor(surfaceY[x]);
+      surfaceY[x] = Math.max(baseGround - 5, Math.min(baseGround + 5, surfaceY[x]));
+    }
+  }
+
+  for (let y = 0; y < WORLD_H; y++) {
+    world[y] = [];
+    for (let x = 0; x < WORLD_W; x++) {
+      const s = surfaceY[x];
+      if (y < s) world[y][x] = 0;
+      else if (y === s) world[y][x] = 2;
+      else if (y <= s + 5) world[y][x] = 1;
+      else if (y > s + 14) world[y][x] = 4;
+      else world[y][x] = 1;
+    }
+  }
+
+  // Carve caves
+  for (let i = 0; i < 40; i++) {
+    let cx = Math.floor(Math.random() * (WORLD_W - 20)) + 10;
+    let cy = baseGround + 10 + Math.floor(Math.random() * 22);
+    const caveRadius = 2.5 + Math.random() * 5.5;
+
+    for (let y = cy - caveRadius; y <= cy + caveRadius; y++) {
+      for (let x = cx - caveRadius; x <= cx + caveRadius; x++) {
+        if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H) continue;
+        if (Math.hypot(x - cx, y - cy) < caveRadius) {
+          if (world[y][x] === 1 || world[y][x] === 4) world[y][x] = 0;
+        }
+      }
+    }
+  }
+
+  // === FIXED: Generate trees AFTER hills and caves ===
+  console.log("🌲 Generating trees...");
+  let treeCount = 0;
+
+  for (let x = 12; x < WORLD_W - 12; x += 7) {
+    if (Math.random() < 0.42) {
+      createTree(x, baseGround);
+      treeCount++;
+    }
+  }
+
+  // Extra random trees
+  for (let x = 12; x < WORLD_W - 12; x += 7) {
+    if (Math.random() < 0.42) createTree(x, surfaceY[x]);
+  }
+
+  for (let i = 0; i < 18; i++) {
+    const rx = 15 + Math.floor(Math.random() * (WORLD_W - 30));
+    if (Math.random() < 0.32) createTree(rx, surfaceY[rx]);
+  }
+  // spawn visible ground items (sticks/stone)
+  spawnGroundItems(surfaceY);
+  console.log("🌲 Trees placed:", treeCount, " | Drops spawned:", drops.length);
+}
+
+// ============================================================
+// CREATE TREE 
+// ============================================================
+function createTree(x, groundY) {
+  const height = 4 + Math.floor(Math.random() * 4);
+
+  // Trunk
+  for (let i = 1; i <= height; i++) {
+    if (groundY - i >= 0) {
+      world[groundY - i][x] = 3;
+    }
+  }
+
+  // Leaves
+  const leafBaseY = groundY - height - 1;
+
+  for (let dy = 0; dy <= 4; dy++) {
+    const ly = leafBaseY + dy;
+    if (ly < 0 || ly >= WORLD_H) continue;
+
+    const width = (dy === 0 || dy === 4) ? 3 : (dy === 1 || dy === 3) ? 5 : 7;
+
+    for (let dx = -Math.floor(width / 2); dx <= Math.floor(width / 2); dx++) {
+      const lx = x + dx;
+      if (lx >= 0 && lx < WORLD_W && world[ly][lx] === 0) {
+        // Force place leaves even if other content exists to ensure visible trees
+        world[ly][lx] = 5;
+      }
+    }
+  }
+}
+
+// ============================================================
+// SPAWN GROUND ITEMS — Fixed for hills
+// ============================================================
+function spawnGroundItems(surfaceY) {
+  for (let x = 0; x < WORLD_W; x++) {
+    const grassY = Math.floor(surfaceY[x]);
+
+    if (grassY > 0 && world[grassY - 1][x] === 0) {
+      // higher spawn chances to ensure visible resources
+      if (Math.random() < 0.20) {
+        drops.push({ x: x * TILE + 8 + Math.random()*8, y: (grassY - 1) * TILE + 6, vy: 0, type: 'stick' });
+      }
+
+      if (Math.random() < 0.12) {
+        drops.push({ x: x * TILE + 8 + Math.random()*8, y: (grassY - 1) * TILE + 6, vy: 0, type: 'stone' });
+      }
+    }
+  }
+}
+
+// ============================================================
+// COLLISION
+// ============================================================
+function solid(tx, ty) {
+  if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) return false;
+  const t = world[ty]?.[tx];
+  return t === 1 || t === 2;
+}
+
+// ============================================================
+// UPDATE 
+// ============================================================
+function update(dt) {
+  if (gameState !== STATE.PLAYING) return;
+
+  // ------------------- INPUT -------------------
+  player.vx = 0;
+  if (input.left)  player.vx = -playerSpeed;
+  if (input.right) player.vx =  playerSpeed;
+
+  // Jump (only when on ground)
+  if (input.jump && player.onGround && !noclip) {
+    player.vy = -playerJump;
+    input.jump = false;
+  }
+
+  // ------------------- NOCLIP MODE -------------------
+  if (noclip) {
+    player.vy = 0;
+    if (input.jump) player.vy = -playerSpeed * 1.2;
+
+    player.x += player.vx * dt;
+    player.y += player.vy * dt;
+    player.onGround = true;
+  } 
+  // ------------------- NORMAL PHYSICS -------------------
+  else {
+    player.vy += 1600 * dt;        // gravity
+
+    // Horizontal movement + collision
+    player.x += player.vx * dt;
+
+    let left   = Math.floor(player.x / TILE);
+    let right  = Math.floor((player.x + player.w - 1) / TILE);
+    let top    = Math.floor(player.y / TILE);
+    let bottom = Math.floor((player.y + player.h - 1) / TILE);
+
+    for (let y = top; y <= bottom; y++) {
+      if (player.vx > 0 && solid(right, y)) {
+        player.x = right * TILE - player.w;
+        player.vx = 0;
+      }
+      if (player.vx < 0 && solid(left, y)) {
+        player.x = (left + 1) * TILE;
+        player.vx = 0;
+      }
+    }
+
+    // Vertical movement + collision
+    player.y += player.vy * dt;
+
+    left   = Math.floor(player.x / TILE);
+    right  = Math.floor((player.x + player.w - 1) / TILE);
+    top    = Math.floor(player.y / TILE);
+    bottom = Math.floor((player.y + player.h - 1) / TILE);
+
+    player.onGround = false;
+
+    for (let x = left; x <= right; x++) {
+      if (solid(x, bottom)) {
+        player.y = bottom * TILE - player.h;
+        player.vy = 0;
+        player.onGround = true;
+        break;
+      }
+    }
+
+    for (let x = left; x <= right; x++) {
+      if (solid(x, top)) {
+        player.y = (top + 1) * TILE;
+        player.vy = 0;
+        break;
+      }
+    }
+  }
+
+  // World boundaries
+  if (player.x < 0) player.x = 0;
+  if (player.x > WORLD_W * TILE - player.w) player.x = WORLD_W * TILE - player.w;
+  if (player.y > WORLD_H * TILE + 200) { 
+    player.y = 100; 
+    player.vy = 0; 
+  }
+
+  // Camera follow
+  camera.x = player.x - canvas.width / 2;
+  camera.y = player.y - canvas.height / 2;
+  if (camera.x < 0) camera.x = 0;
+  if (camera.y < 0) camera.y = 0;
+  if (camera.x > WORLD_W * TILE - canvas.width) camera.x = WORLD_W * TILE - canvas.width;
+  if (camera.y > WORLD_H * TILE - canvas.height) camera.y = WORLD_H * TILE - canvas.height;
+
+  // ==================== DROPS GRAVITY & PICKUP ====================
+  for (const d of drops) {
+    if (!d.vy) d.vy = 0;
+    if (!d.vx) d.vx = 0;
+
+    d.vy += 1200 * dt;
+    d.y += d.vy * dt;
+    d.x += (d.vx || 0) * dt;
+
+    if (d.vx) d.vx *= 0.98;
+
+    const by = Math.floor((d.y + TILE - 4) / TILE);
+    const bx = Math.floor((d.x + TILE/2) / TILE);
+
+    if (by >= WORLD_H || solid(bx, by)) {
+      d.vy = 0;
+      d.y = by * TILE - TILE + 4;
+      d.vx *= 0.6;
+    }
+  }
+
+  // Pickup drops
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    const dx = (player.x + player.w / 2) - (d.x + TILE / 2);
+    const dy = (player.y + player.h / 2) - (d.y + TILE / 2);
+    if (Math.hypot(dx, dy) < TILE * 1.6) {
+      addToInventory(d.type, 1);
+      drops.splice(i, 1);
+    }
+  }
+}   
+
+// ============================================================
+// DRAW
+// ============================================================
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  g.addColorStop(0, '#87CEEB'); g.addColorStop(1, '#e6fbff');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (world.length === 0) return;
+
+  const timeNow = performance.now();
+  const startX = Math.max(0, Math.floor(camera.x / TILE) - 1);
+  const endX = Math.min(WORLD_W - 1, Math.ceil((camera.x + canvas.width) / TILE) + 1);
+  const startY = Math.max(0, Math.floor(camera.y / TILE) - 1);
+  const endY = Math.min(WORLD_H - 1, Math.ceil((camera.y + canvas.height) / TILE) + 1);
+
+  for (let y = startY; y <= endY; y++) {
+    for (let x = startX; x <= endX; x++) {
+      const t = world[y][x];
+      if (t === 0) continue;
+      let screenX = x * TILE - camera.x;
+      let screenY = y * TILE - camera.y;
+      let size = TILE;
+
+      // Mining shrink animation
+      if (mining.tx === x && mining.ty === y && mining.progress > 0) {
+        const shrink = mining.progress * (TILE * 0.4); // shrink up to 40%
+        screenX += shrink / 2;
+        screenY += shrink / 2;
+        size -= shrink;
+        // Crack overlay darkness
+        const crackAlpha = mining.progress * 0.4;
+        drawTile(t, screenX, screenY, size, timeNow, x);
+        // Draw crack overlay
+        ctx.fillStyle = 'rgba(0,0,0,' + crackAlpha + ')';
+        ctx.fillRect(screenX, screenY, size, size);
+        // Draw crack lines
+        ctx.strokeStyle = 'rgba(0,0,0,' + (0.3 + mining.progress * 0.5) + ')';
+        ctx.lineWidth = 1;
+        const cx = screenX + size / 2, cy = screenY + size / 2;
+        const numCracks = Math.floor(mining.progress * 5) + 1;
+        for (let c = 0; c < numCracks; c++) {
+          const angle = (c / numCracks) * Math.PI * 2 + 0.5;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + Math.cos(angle) * size * 0.5, cy + Math.sin(angle) * size * 0.5);
+          ctx.stroke();
+        }
+        continue;
+      }
+
+      drawTile(t, screenX, screenY, size, timeNow, x);
+    }
+  }
+
+  // Drops
+  for (const d of drops) { drawItem(d.x - camera.x, d.y - camera.y, d.type); }
+
+  // Mining progress bar at cursor
+  if (mining.progress > 0 && mining.tx >= 0) {
+    const barX = mining.tx * TILE - camera.x;
+    const barY = mining.ty * TILE - camera.y - 8;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(barX, barY, TILE, 5);
+    ctx.fillStyle = '#ffd64d';
+    ctx.fillRect(barX, barY, TILE * mining.progress, 5);
+  }
+
+  // Player
+  const bob = Math.sin(timeNow / 120) * 4 * (player.vx !== 0 ? 1 : 0.18);
+  ctx.fillStyle = 'crimson';
+  ctx.fillRect(player.x - camera.x, player.y - camera.y - bob, player.w, player.h);
+
+  // Health bar
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(12, 12, 160, 36);
+  ctx.fillStyle = '#e44';
+  ctx.fillRect(14, 14, Math.max(0, (player.health / 100) * 156), 32);
+  ctx.fillStyle = '#fff';
+  ctx.font = '14px monospace';
+  ctx.fillText('HP: ' + player.health, 22, 35);
+
+  if (gameState === STATE.PAUSED) {
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function drawTile(t, screenX, screenY, size, timeNow, tileX) {
+  if (t === 1) { ctx.fillStyle = '#8B5A33'; ctx.fillRect(screenX, screenY, size, size); }
+  else if (t === 2) { ctx.fillStyle = '#2E8B57'; ctx.fillRect(screenX, screenY, size, size); }
+  else if (t === 3) { ctx.fillStyle = '#654321'; ctx.fillRect(screenX, screenY, size, size); }
+  else if (t === 5) {
+    const sway = Math.sin((tileX * 13 + timeNow * 0.006)) * 3;
+    ctx.fillStyle = '#2E8B57';
+    const inset = (TILE - size) * 0.1 + 4;
+    ctx.fillRect(screenX + inset + sway, screenY + inset, size - inset * 2, size - inset * 2);
+  }
+  else if (t === 4) {
+    ctx.fillStyle = '#A0522D';
+    ctx.beginPath();
+    ctx.arc(screenX + size / 2, screenY + size / 2, size * 0.19, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawItem(x, y, type) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (type === 'wood') {
+    ctx.fillStyle = '#8B4513'; ctx.fillRect(8, 8, 16, 16);
+  } else if (type === 'stick') {
+    ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(10, 22); ctx.lineTo(22, 8); ctx.stroke();
+  } else if (type === 'stone') {
+    ctx.fillStyle = '#888'; ctx.beginPath();
+    ctx.arc(16, 18, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#777'; ctx.beginPath();
+    ctx.arc(14, 16, 4, 0, Math.PI * 2); ctx.fill();
+  } else if (type === 'wooden_axe' || type === 'stone_axe') {
+    ctx.fillStyle = type === 'stone_axe' ? '#888' : '#a07040';
+    ctx.fillRect(8, 8, 16, 16);
+  } else if (type === 'wooden_pickaxe' || type === 'stone_pickaxe') {
+    ctx.fillStyle = type === 'stone_pickaxe' ? '#888' : '#808080';
+    ctx.fillRect(8, 8, 16, 16);
+  } else {
+    ctx.fillStyle = '#d1c4a6'; ctx.fillRect(8, 8, 16, 16);
+  }
+  ctx.restore();
+}
+
+// ============================================================
+// MOUSE ACTIONS — PROGRESSIVE MINING
+// ============================================================
+let mouse = { x: 0, y: 0, down: false, rightDown: false };
+canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener('mousedown', e => { if (e.button === 0) mouse.down = true; if (e.button === 2) mouse.rightDown = true; });
+canvas.addEventListener('mouseup', e => {
+  if (e.button === 0) { mouse.down = false; mining.tx = -1; mining.ty = -1; mining.progress = 0; }
+  if (e.button === 2) mouse.rightDown = false;
+});
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+function handleMouseActions(dt) {
+  if (gameState !== STATE.PLAYING) return;
+
+  const mx = Math.floor((mouse.x + camera.x) / TILE);
+  const my = Math.floor((mouse.y + camera.y) / TILE);
+
+  // Check range
+  const px = player.x + player.w / 2;
+  const py = player.y + player.h / 2;
+  const dist = Math.hypot(mx * TILE + TILE / 2 - px, my * TILE + TILE / 2 - py);
+
+  if (mouse.down && dist <= TILE * 6) {
+    // First try picking up nearby drops
+    for (let i = drops.length - 1; i >= 0; i--) {
+      const d = drops[i];
+      if (Math.hypot(px - d.x, py - d.y) < TILE * 2) {
+        addToInventory(d.type, 1);
+        drops.splice(i, 1);
+      }
+    }
+
+    // Progressive mining
+    if (mx >= 0 && mx < WORLD_W && my >= 0 && my < WORLD_H && world[my] && world[my][mx] !== 0) {
+      const tile = world[my][mx];
+      const item = hotbar[selected];
+      const toolType = item?.type || null;
+
+      // Check if we can mine this tile
+      let canMine = false;
+      if (tile === 3 || tile === 5) canMine = true; // wood/leaves always mineable
+      if ((tile === 1 || tile === 2) && (toolType === 'wooden_pickaxe' || toolType === 'stone_pickaxe')) canMine = true;
+
+      if (canMine) {
+        // If targeting a new tile, reset progress
+        if (mining.tx !== mx || mining.ty !== my) {
+          mining.tx = mx;
+          mining.ty = my;
+          mining.progress = 0;
+        }
+
+        // Accumulate progress
+        const mineTime = getMineTime(tile, toolType);
+        mining.progress += dt / mineTime;
+
+        if (mining.progress >= 1) {
+          // Block broken!
+          const drop = getTileDrop(tile, mx, my);   // pass coordinates for tree logic
+          world[my][mx] = 0;
+  
+          // If no drop was returned (e.g. dirt), do nothing extra
+          mining.tx = -1; 
+          mining.ty = -1; 
+          mining.progress = 0;
+        }
+      }
+    } else {
+      // Not pointing at a mineable tile
+      if (mining.tx !== mx || mining.ty !== my) {
+        mining.tx = -1; mining.ty = -1; mining.progress = 0;
+      }
+    }
+  } else if (!mouse.down) {
+    // Released mouse — reset mining
+    mining.tx = -1; mining.ty = -1; mining.progress = 0;
+  }
+
+  // Right click: place block
+  if (mouse.rightDown && dist <= TILE * 6 && mx >= 0 && mx < WORLD_W && my >= 0 && my < WORLD_H && world[my] && world[my][mx] === 0) {
+    const item = hotbar[selected];
+    if (item && item.type === 'wood' && item.count > 0) {
+      const px1 = Math.floor(player.x / TILE), py1 = Math.floor(player.y / TILE);
+      const px2 = Math.floor((player.x + player.w - 1) / TILE), py2 = Math.floor((player.y + player.h - 1) / TILE);
+      if (mx >= px1 && mx <= px2 && my >= py1 && my <= py2) return;
+      world[my][mx] = 3;
+      item.count--;
+      if (item.count <= 0) { item.type = null; item.count = 0; }
+      updateHotbarDOM();
+    }
+  }
+}
+
+// ============================================================
+// INPUT HANDLING
+// ============================================================
+window.addEventListener('keydown', e => {
+  if (e.code === 'KeyA' || e.code === 'ArrowLeft') input.left = true;
+  if (e.code === 'KeyD' || e.code === 'ArrowRight') input.right = true;
+  if (e.code === 'Space') { 
+  input.jump = true; 
+  e.preventDefault(); 
+}
+
+  if (e.repeat) return;
+
+  if (e.code === 'Escape') {
+    if (gameState === STATE.SLOTS) { closeSlotPanel(); return; }
+    if (gameState === STATE.MENU) return;
+    if (gameState === STATE.INVENTORY) { closeInventory(); return; }
+    if (gameState === STATE.PLAYING) { pauseGame(); return; }
+    if (gameState === STATE.PAUSED) { resumeGame(); return; }
+  }
+
+  if (e.code === 'KeyE') {
+    if (gameState === STATE.PLAYING) { openInventory(); return; }
+    if (gameState === STATE.INVENTORY) { closeInventory(); return; }
+  }
+
+  if (gameState === STATE.PLAYING && /^[0-9]$/.test(e.key)) {
+    const n = parseInt(e.key);
+    selected = (n === 0 ? 9 : n - 1);
+    updateHotbarDOM();
+  }
+
+  if (e.code === 'F3') { e.preventDefault(); toggleDebug(); }
+});
+
+window.addEventListener('keyup', e => {
+  if (e.code === 'KeyA' || e.code === 'ArrowLeft') input.left = false;
+  if (e.code === 'KeyD' || e.code === 'ArrowRight') input.right = false;
+  if (e.code === 'Space') input.jump = false;
+});
+
+window.addEventListener('wheel', e => {
+  if (gameState !== STATE.PLAYING) return;
+  if (e.deltaY > 0) selected = (selected + 1) % 10;
+  else selected = (selected + 9) % 10;
+  updateHotbarDOM();
+  e.preventDefault();
+}, { passive: false });
+
+// ============================================================
+// STATE TRANSITIONS
+// ============================================================
+function startNewGame() {
+  // 1. IMMEDIATELY hide the menu and show the game UI
+  mainMenu.style.display = 'none';
+  mainMenu.style.visibility = 'hidden';
+  hudEl.style.display = 'block';
+  
+  // 2. Reset game state and variables
+  gameState = STATE.PLAYING;
+  hotbar = Array.from({ length: 10 }, () => ({ type: null, count: 0 }));
+  inventory = Array.from({ length: 20 }, () => ({ type: null, count: 0 }));
+  selected = 0;
+  player.health = 100;
+  player.vx = 0;
+  player.vy = 0;
+  currentSlot = null;
+
+  // 3. Generate the world
+  generateWorld();
+
+  // 4. Position player safely above ground level (calculated in pixels)
+  // WORLD_H * 0.58 is roughly where your ground starts
+  player.x = (WORLD_W * TILE) / 2;
+  player.y = (WORLD_H * 0.5) * TILE; 
+
+  // 5. Rebuild UI
+  buildHotbar();
+  updateHotbarDOM();
+
+  showMessage("Game Started! WASD to move, Click to mine.", false);
+}
+
+function pauseGame() {
+  gameState = STATE.PAUSED;
+  input.left = input.right = input.jump = false;
+  pauseMenu.style.display = 'flex';
+  pauseOverlay.style.display = 'block';
+}
+
+function resumeGame() {
+  gameState = STATE.PLAYING;
+  pauseMenu.style.display = 'none';
+  pauseOverlay.style.display = 'none';
+}
+
+function openInventory() {
+  gameState = STATE.INVENTORY;
+  input.left = input.right = input.jump = false;
+  menuEl.style.display = 'block';
+  buildInventoryUI();
+  buildRecipes();
+}
+
+function closeInventory() {
+  gameState = STATE.PLAYING;
+  menuEl.style.display = 'none';
+}
+
+function quitToMenu() {
+  gameState = STATE.MENU;
+  pauseMenu.style.display = 'none';
+  pauseOverlay.style.display = 'none';
+  menuEl.style.display = 'none';
+  hudEl.style.display = 'none';
+  debugConsole.style.display = 'none';
+  debugVisible = false;
+  mainMenu.style.display = 'flex';
+  updateLoadBtnState();
+}
+
+function updateLoadBtnState() {
+  if (anySlotHasSave()) loadGameBtn.classList.remove('disabled');
+  else loadGameBtn.classList.add('disabled');
+}
+
+// ============================================================
+// MENU BUTTON WIRING
+// ============================================================
+const startGameBtn = document.getElementById('startGameBtn');
+const loadGameBtn = document.getElementById('loadGameBtn');
+const exitBtn = document.getElementById('exitBtn');
+const resumeBtn = document.getElementById('resumeBtn');
+const saveGameBtn = document.getElementById('saveGameBtn');
+const saveQuitBtn = document.getElementById('saveQuitBtn');
+
+startGameBtn.addEventListener('click', startNewGame);
+
+loadGameBtn.addEventListener('click', () => {
+  if (!anySlotHasSave()) { showMessage('No saves found!', true); return; }
+  mainMenu.style.display = 'none';
+  gameState = STATE.SLOTS;
+  openSlotPanel('load', STATE.MENU);
+});
+
+exitBtn.addEventListener('click', () => {
+  if (window.close) window.close();
+  showMessage('Close this tab to exit.');
+});
+
+resumeBtn.addEventListener('click', resumeGame);
+
+saveGameBtn.addEventListener('click', () => {
+  // If we already have a slot, save directly. Otherwise open slot picker.
+  if (currentSlot) {
+    saveGame(currentSlot);
+  } else {
+    pauseMenu.style.display = 'none';
+    pauseOverlay.style.display = 'none';
+    gameState = STATE.SLOTS;
+    openSlotPanel('save', STATE.PAUSED);
+  }
+});
+
+saveQuitBtn.addEventListener('click', () => {
+  if (currentSlot) {
+    saveGame(currentSlot);
+    quitToMenu();
+  } else {
+    // Need to pick a slot first
+    pauseMenu.style.display = 'none';
+    pauseOverlay.style.display = 'none';
+    slotMode = 'save';
+    slotPanelTitle.textContent = 'Save & Quit — Pick a Slot';
+    buildSlotList();
+    saveSlotPanel.style.display = 'flex';
+    slotOverlay.style.display = 'block';
+    // Override slot click to save+quit
+    saveSlotPanel._returnState = STATE.PAUSED;
+    saveSlotPanel._quitAfterSave = true;
+    gameState = STATE.SLOTS;
+  }
+});
+
+// Patch slot click for save+quit flow
+const origBuildSlotList = buildSlotList;
+buildSlotList = function() {
+  slotList.innerHTML = '';
+  const saves = getAllSaves();
+  for (const s of saves) {
+    const el = document.createElement('div');
+    el.className = 'save-slot';
+    if (s.exists) {
+      el.innerHTML = '<div class="slot-info"><div class="slot-name">Slot ' + s.slot + '</div><div class="slot-date">' + s.date + '</div></div>';
+      const del = document.createElement('button');
+      del.className = 'delete-save';
+      del.textContent = 'Delete';
+      del.addEventListener('click', ev => { ev.stopPropagation(); deleteSave(s.slot); });
+      el.appendChild(del);
+    } else {
+      el.innerHTML = '<div class="slot-info"><div class="slot-name">Slot ' + s.slot + '</div><div class="slot-empty">' + (slotMode === 'save' ? 'Empty — click to save here' : 'Empty') + '</div></div>';
+    }
+
+    el.addEventListener('click', () => {
+      if (slotMode === 'load') {
+        if (!s.exists) { showMessage('Slot ' + s.slot + ' is empty!', true); return; }
+        if (loadGame(s.slot)) {
+          saveSlotPanel.style.display = 'none';
+          slotOverlay.style.display = 'none';
+          mainMenu.style.display = 'none';
+          hudEl.style.display = '';
+          gameState = STATE.PLAYING;
+        }
+      } else {
+        saveGame(s.slot);
+        if (saveSlotPanel._quitAfterSave) {
+          saveSlotPanel._quitAfterSave = false;
+          saveSlotPanel.style.display = 'none';
+          slotOverlay.style.display = 'none';
+          quitToMenu();
+        } else {
+          buildSlotList();
+        }
+      }
+    });
+    slotList.appendChild(el);
+  }
+};
+
+document.getElementById('closeMenu').addEventListener('click', closeInventory);
+pauseOverlay.addEventListener('click', resumeGame);
+
+updateLoadBtnState();
+
+// ============================================================
+// DEBUG CONSOLE
+// ============================================================
+let debugVisible = false;
+let fpsFrames = 0;
+let fpsTime = 0;
+let fpsDisplay = 0;
+
+function toggleDebug() {
+  debugVisible = !debugVisible;
+  debugConsole.style.display = debugVisible ? 'block' : 'none';
+}
+
+function updateDebugInfo() {
+  if (!debugVisible) return;
+  document.getElementById('debugPlayerPos').textContent =
+    'x: ' + Math.round(player.x) + ', y: ' + Math.round(player.y) +
+    ' (tile: ' + Math.floor(player.x / TILE) + ', ' + Math.floor(player.y / TILE) + ')';
+  document.getElementById('debugFPS').textContent = fpsDisplay + ' FPS';
+}
+
+document.getElementById('debugTpBtn').addEventListener('click', () => {
+  player.x = parseFloat(document.getElementById('debugTpX').value) * TILE || 0;
+  player.y = parseFloat(document.getElementById('debugTpY').value) * TILE || 0;
+  player.vx = 0; player.vy = 0;
+  showMessage('Teleported!');
+});
+
+document.getElementById('debugSpeedBtn').addEventListener('click', () => {
+  playerSpeed = parseFloat(document.getElementById('debugSpeed').value) || 220;
+  playerJump = parseFloat(document.getElementById('debugJump').value) || 520;
+  showMessage('Speed: ' + playerSpeed + ', Jump: ' + playerJump);
+});
+
+document.getElementById('debugHealthBtn').addEventListener('click', () => {
+  player.health = parseInt(document.getElementById('debugHealth').value) || 100;
+  showMessage('Health set to ' + player.health);
+});
+
+document.getElementById('debugSpawnBtn').addEventListener('click', () => {
+  const type = document.getElementById('debugItemType').value;
+  const count = parseInt(document.getElementById('debugItemCount').value) || 1;
+  addToInventory(type, count);
+  showMessage('Added ' + count + 'x ' + getItemName(type));
+});
+
+document.getElementById('debugRegenBtn').addEventListener('click', () => {
+  generateWorld();
+  player.x = WORLD_W * TILE / 2; player.y = 100; player.vx = 0; player.vy = 0;
+  showMessage('World regenerated!');
+});
+
+document.getElementById('debugClearInv').addEventListener('click', () => {
+  hotbar = Array.from({ length: 10 }, () => ({ type: null, count: 0 }));
+  inventory = Array.from({ length: 20 }, () => ({ type: null, count: 0 }));
+  buildHotbar(); buildInventoryUI(); updateHotbarDOM();
+  showMessage('Inventory cleared!');
+});
+
+document.getElementById('debugNoclip').addEventListener('change', e => {
+  noclip = e.target.checked;
+  showMessage('Noclip: ' + (noclip ? 'ON' : 'OFF'));
+});
+
+document.getElementById('debugGodmode').addEventListener('change', e => {
+  godmode = e.target.checked;
+  showMessage('Godmode: ' + (godmode ? 'ON' : 'OFF'));
+});
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+let last = performance.now();
+
+function loop(t) {
+  const dt = Math.min(0.04, (t - last) / 1000);
+  last = t;
+
+  fpsFrames++;
+  fpsTime += dt;
+  if (fpsTime >= 1) { 
+    fpsDisplay = fpsFrames; 
+    fpsFrames = 0; 
+    fpsTime = 0; 
+  }
+
+  // Always run these, even if menu is visible (for safety)
+  update(dt);
+  handleMouseActions(dt);
+  draw();
+  updateDebugInfo();
+
+  requestAnimationFrame(loop);
+}
+// ============================================================
+// INIT
+// ============================================================
+mainMenu.style.display = 'flex';
+hudEl.style.display = 'none';
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
