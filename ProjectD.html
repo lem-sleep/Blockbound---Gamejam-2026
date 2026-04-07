@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Terraria-like Game â€“ Fixed Drag & Drop (Inventory & Hotbar)</title>
+    <title>Blockbound</title>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; font-family: monospace; }
         .crafting-panel {
@@ -93,14 +93,14 @@
 </head>
 <body>
 <div class="controls-hint">
-    ðŸŽ® WASD/Arrows = Move | SPACE = Jump | E = Collect Sticks<br>
-    ðŸ“¦ ESC = Inventory + Crafting | 1-0 = Hotbar | Scroll = Cycle<br>
-    ðŸ–±ï¸ Drag & Drop items to rearrange (click and drag, release over slot)
+    🎮 WASD/Arrows = Move | SPACE = Jump | E = Collect Sticks<br>
+    📦 ESC = Inventory + Crafting | 1-0 = Hotbar | Scroll = Cycle<br>
+    🖱️ Drag & Drop items to rearrange (click and drag, release over slot)
 </div>
 
 <div id="craftingPanel" class="crafting-panel">
-    <div class="close-btn" onclick="closeCraftPanel()">âœ–</div>
-    <h3>ðŸ”¨ CRAFTING</h3>
+    <div class="close-btn" onclick="closeCraftPanel()">✖</div>
+    <h3>🔨 CRAFTING</h3>
     <div id="recipe-list"></div>
 </div>
 
@@ -154,11 +154,11 @@ let dragActive = false;
 let dragSource = null;      // { type: 'hotbar'|'inventory', index: number, item: { type, count } }
 
 const recipes = [
-    { name: 'Wooden Axe',      icon: 'ðŸª“', cost: { stick: 5 },                result: 'wooden_axe',      resultName: 'Wooden Axe' },
-    { name: 'Wooden Pickaxe',  icon: 'â›ï¸', cost: { stick: 8 },                result: 'wooden_pickaxe',  resultName: 'Wooden Pickaxe' },
-    { name: 'Stone Axe',       icon: 'ðŸª“', cost: { wood: 10, stone: 5 },      result: 'stone_axe',       resultName: 'Stone Axe' },
-    { name: 'Stone Pickaxe',   icon: 'â›ï¸', cost: { wood: 12, stone: 8 },      result: 'stone_pickaxe',   resultName: 'Stone Pickaxe' },
-    { name: 'Stone Sword',     icon: 'âš”ï¸', cost: { wood: 8, stone: 4 },       result: 'stone_sword',     resultName: 'Stone Sword' }
+    { name: 'Wooden Axe',      icon: '🪓', cost: { stick: 5 },                result: 'wooden_axe',      resultName: 'Wooden Axe' },
+    { name: 'Wooden Pickaxe',  icon: '⛏️', cost: { stick: 8 },                result: 'wooden_pickaxe',  resultName: 'Wooden Pickaxe' },
+    { name: 'Stone Axe',       icon: '🪓', cost: { wood: 10, stone: 5 },      result: 'stone_axe',       resultName: 'Stone Axe' },
+    { name: 'Stone Pickaxe',   icon: '⛏️', cost: { wood: 12, stone: 8 },      result: 'stone_pickaxe',   resultName: 'Stone Pickaxe' },
+    { name: 'Stone Sword',     icon: '⚔️', cost: { wood: 8, stone: 4 },       result: 'stone_sword',     resultName: 'Stone Sword' }
 ];
 
 // --------------------------------------------------------------
@@ -233,7 +233,7 @@ function canCraft(recipe) {
 
 function craftItem(recipe, scene) {
     if (!canCraft(recipe)) {
-        scene.showMessage('âŒ Missing materials!', 0xff6666);
+        scene.showMessage('❌ Missing materials!', 0xff6666);
         return false;
     }
     for (let [res, amt] of Object.entries(recipe.cost)) {
@@ -242,7 +242,7 @@ function craftItem(recipe, scene) {
     addToInventory(recipe.result, 1);
     updateInventoryUI();
     updateCraftingPanel();
-    scene.showMessage(`âœ”ï¸ ${recipe.resultName} crafted!`, 0xaaffaa);
+    scene.showMessage(`✔️ ${recipe.resultName} crafted!`, 0xaaffaa);
     return true;
 }
 
@@ -414,7 +414,7 @@ function create() {
     inventoryBackground = this.add.rectangle(16 + totalWidth/2, hotbarBottom + totalHeight/2, totalWidth, totalHeight, 0x0a0a0a, 0.96)
         .setScrollFactor(0).setDepth(9);
     inventoryBackground.setStrokeStyle(2, 0xffaa44);
-    inventoryTitle = this.add.text(16+10, hotbarBottom+5, 'ðŸ“¦ INVENTORY', { fontSize: '14px', fill: '#ffaa44' })
+    inventoryTitle = this.add.text(16+10, hotbarBottom+5, '📦 INVENTORY', { fontSize: '14px', fill: '#ffaa44' })
         .setScrollFactor(0).setDepth(9);
     
     // Hide inventory UI initially
@@ -523,7 +523,7 @@ function create() {
                 stick.destroy();
                 sticks.splice(i,1);
                 addToInventory('stick', 1);
-                this.showMessage('ðŸŒ¿ +1 Stick', 0xCD853F);
+                this.showMessage('🌿 +1 Stick', 0xCD853F);
             }
         }
     });
@@ -671,11 +671,11 @@ function updateInventoryUI() {
 
 function getItemIcon(type) {
     const map = {
-        'stick': 'ðŸŒ¿', 'wood': 'ðŸªµ', 'stone': 'ðŸª¨',
-        'wooden_axe': 'ðŸª“', 'wooden_pickaxe': 'â›ï¸',
-        'stone_axe': 'ðŸª“', 'stone_pickaxe': 'â›ï¸', 'stone_sword': 'âš”ï¸'
+        'stick': '🌿', 'wood': '🪵', 'stone': '🪨',
+        'wooden_axe': '🪓', 'wooden_pickaxe': '⛏️',
+        'stone_axe': '🪓', 'stone_pickaxe': '⛏️', 'stone_sword': '⚔️'
     };
-    return map[type] || 'ðŸ“¦';
+    return map[type] || '📦';
 }
 
 // --------------------------------------------------------------
@@ -715,14 +715,14 @@ function update() {
                         canAttack = false;
                         attackTimer = 12;
                         tree.treeHealth--;
-                        this.showMessage(`ðŸ’¥ Chop! (${tree.treeHealth}/3)`, 0xffaa66);
+                        this.showMessage(`💥 Chop! (${tree.treeHealth}/3)`, 0xffaa66);
                         if (tree.treeHealth <= 0) {
                             let woodAmt = tree.woodAmount;
                             tree.destroy();
                             if (tree.leavesObj) tree.leavesObj.destroy();
                             trees.splice(i,1);
                             addToInventory('wood', woodAmt);
-                            this.showMessage(`ðŸªµ +${woodAmt} Wood`, 0xBB8844);
+                            this.showMessage(`🪵 +${woodAmt} Wood`, 0xBB8844);
                         }
                         break;
                     }
@@ -736,12 +736,12 @@ function update() {
                         canAttack = false;
                         attackTimer = 12;
                         rock.rockHealth--;
-                        this.showMessage(`â›ï¸ Mine! (${rock.rockHealth}/5)`, 0xbbaa88);
+                        this.showMessage(`⛏️ Mine! (${rock.rockHealth}/5)`, 0xbbaa88);
                         if (rock.rockHealth <= 0) {
                             rock.destroy();
                             rocks.splice(i,1);
                             addToInventory('stone', 3);
-                            this.showMessage(`ðŸª¨ +3 Stone`, 0xaaaaaa);
+                            this.showMessage(`🪨 +3 Stone`, 0xaaaaaa);
                         }
                         break;
                     }
