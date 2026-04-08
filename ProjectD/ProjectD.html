@@ -1,121 +1,198 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+    <meta charset="UTF-8">
+    <title>Blockbound</title>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; }
-        .controls-hint {
+        body { margin: 0; padding: 0; overflow: hidden; font-family: monospace; }
+        .crafting-panel {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(0,0,0,0.7);
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0,0,0,0.95);
+            border: 2px solid #ffaa44;
+            border-radius: 12px;
+            padding: 15px;
+            color: #ffaa44;
+            font-family: monospace;
+            z-index: 1000;
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 240px;
+            backdrop-filter: blur(8px);
+            pointer-events: auto;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        .crafting-panel h3 {
+            margin: 0 0 10px 0;
+            text-align: center;
+            font-size: 18px;
+        }
+        .crafting-panel .recipe {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #222;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border-left: 3px solid #ffaa44;
+        }
+        .crafting-panel .recipe-info {
+            font-size: 13px;
+        }
+        .crafting-panel .recipe-info span {
+            color: #fff;
+        }
+        .crafting-panel button {
+            background: #446644;
             color: white;
-            padding: 10px;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 6px;
+            cursor: pointer;
             font-family: monospace;
             font-size: 12px;
-            border-radius: 5px;
-            z-index: 1000;
+            transition: 0.2s;
+        }
+        .crafting-panel button:hover {
+            background: #66aa66;
+        }
+        .crafting-panel button:disabled {
+            background: #444;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .crafting-panel .close-btn {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            cursor: pointer;
+            font-size: 16px;
+            color: #aaa;
+        }
+        .crafting-panel .close-btn:hover {
+            color: #fff;
+        }
+        .controls-hint {
+            position: fixed;
+            bottom: 12px;
+            right: 12px;
+            background: rgba(0,0,0,0.7);
+            color: #ccc;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            z-index: 100;
             pointer-events: none;
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
 </head>
 <body>
 <div class="controls-hint">
-    🎮 CONTROLS:<br>
-    WASD/Arrows = Move | SPACE = Jump<br>
-    E = Collect Sticks | ESC = Menu (Inv + Craft)<br>
-    1-0 = Hotbar | Scroll = Cycle Hotbar
+    🎮 WASD/Arrows = Move | SPACE = Jump | E = Collect Sticks<br>
+    📦 ESC = Inventory + Crafting | 1-0 = Hotbar | Scroll = Cycle<br>
+    🖱️ Drag & Drop items to rearrange (click and drag, release over slot)
 </div>
+
+<div id="craftingPanel" class="crafting-panel">
+    <div class="close-btn" onclick="closeCraftPanel()">✖</div>
+    <h3>🔨 CRAFTING</h3>
+    <div id="recipe-list"></div>
+</div>
+
 <script>
+// --------------------------------------------------------------
+// PHASER CONFIG
+// --------------------------------------------------------------
 const config = {
     type: Phaser.AUTO,
     width: window.innerWidth,
     height: window.innerHeight,
-    backgroundColor: '#87CEEB',
+    backgroundColor: '#6bb5ff',
     physics: {
         default: 'arcade',
         arcade: { gravity: { y: 300 }, debug: false }
     },
-    scene: {
-        create: create,
-        update: update
-    }
+    scene: { create: create, update: update }
 };
 
 const game = new Phaser.Game(config);
 
-// ========== GAME DATA ==========
+// --------------------------------------------------------------
+// GLOBAL DATA
+// --------------------------------------------------------------
 let hotbar = Array(10).fill(null).map(() => ({ type: null, count: 0 }));
 let inventory = Array(20).fill(null).map(() => ({ type: null, count: 0 }));
 let selectedSlot = 0;
+let menuOpen = false;
 
-// ========== WORLD OBJECTS ==========
 let player;
-let ground;
-let trees = [];
-let stoneRocks = [];
+let groundLayer;
 let sticks = [];
-let groundY;
+let trees = [];
+let rocks = [];
 let worldWidth = 20000;
+let groundY;
 
-// ========== UI ELEMENTS ==========
 let hotbarSlots = [];
 let hotbarFrame;
-let inventorySlots = [];
-let craftingSlots = [];
-let menuPanel;
-let menuOpen = false;
-let dragData = null;
+let inventorySlots = [];       // now direct scene objects, not in container
+let inventoryBackground;       // background rectangle for inventory area
+let inventoryTitle;            // text label for inventory
+let inventoryBgContainer;      // container for background and title (non-interactive)
 
-// ========== GAME STATE ==========
 let canAttack = true;
 let attackTimer = 0;
-const REACH_DISTANCE = 80;
+const REACH = 85;
 
-// ========== CRAFTING RECIPES ==========
+// Drag state
+let dragActive = false;
+let dragSource = null;      // { type: 'hotbar'|'inventory', index: number, item: { type, count } }
+
 const recipes = [
-    { name: 'Wooden Axe', icon: '🪓', cost: { stick: 5 }, result: 'wooden_axe', resultName: 'Wooden Axe' },
-    { name: 'Wooden Pickaxe', icon: '⛏️', cost: { stick: 8 }, result: 'wooden_pickaxe', resultName: 'Wooden Pickaxe' },
-    { name: 'Stone Axe', icon: '🪓', cost: { wood: 10, stone: 5 }, result: 'stone_axe', resultName: 'Stone Axe' },
-    { name: 'Stone Pickaxe', icon: '⛏️', cost: { wood: 12, stone: 8 }, result: 'stone_pickaxe', resultName: 'Stone Pickaxe' },
-    { name: 'Stone Sword', icon: '⚔️', cost: { wood: 8, stone: 4 }, result: 'stone_sword', resultName: 'Stone Sword' }
+    { name: 'Wooden Axe',      icon: '🪓', cost: { stick: 5 },                result: 'wooden_axe',      resultName: 'Wooden Axe' },
+    { name: 'Wooden Pickaxe',  icon: '⛏️', cost: { stick: 8 },                result: 'wooden_pickaxe',  resultName: 'Wooden Pickaxe' },
+    { name: 'Stone Axe',       icon: '🪓', cost: { wood: 10, stone: 5 },      result: 'stone_axe',       resultName: 'Stone Axe' },
+    { name: 'Stone Pickaxe',   icon: '⛏️', cost: { wood: 12, stone: 8 },      result: 'stone_pickaxe',   resultName: 'Stone Pickaxe' },
+    { name: 'Stone Sword',     icon: '⚔️', cost: { wood: 8, stone: 4 },       result: 'stone_sword',     resultName: 'Stone Sword' }
 ];
 
-// ========== INVENTORY FUNCTIONS ==========
+// --------------------------------------------------------------
+// INVENTORY HELPERS
+// --------------------------------------------------------------
 function addToInventory(type, amount) {
-    // Try hotbar first
     for (let i = 0; i < hotbar.length; i++) {
         if (hotbar[i] && hotbar[i].type === type) {
             hotbar[i].count += amount;
             updateHotbarUI();
-            return true;
+            return;
         }
     }
-    // Try inventory
     for (let i = 0; i < inventory.length; i++) {
         if (inventory[i] && inventory[i].type === type) {
             inventory[i].count += amount;
             if (menuOpen) updateInventoryUI();
-            return true;
+            return;
         }
     }
-    // Find empty hotbar slot
     for (let i = 0; i < hotbar.length; i++) {
         if (hotbar[i].type === null) {
             hotbar[i] = { type: type, count: amount };
             updateHotbarUI();
-            return true;
+            return;
         }
     }
-    // Find empty inventory slot
     for (let i = 0; i < inventory.length; i++) {
         if (inventory[i].type === null) {
             inventory[i] = { type: type, count: amount };
             if (menuOpen) updateInventoryUI();
-            return true;
+            return;
         }
     }
-    return false;
 }
 
 function removeFromInventory(type, amount) {
@@ -138,7 +215,6 @@ function removeFromInventory(type, amount) {
     }
     updateHotbarUI();
     if (menuOpen) updateInventoryUI();
-    return remaining === 0;
 }
 
 function hasInInventory(type, amount) {
@@ -148,79 +224,148 @@ function hasInInventory(type, amount) {
     return total >= amount;
 }
 
-function getItemCount(type) {
-    let total = 0;
-    for (let s of hotbar) if (s.type === type) total += s.count;
-    for (let s of inventory) if (s.type === type) total += s.count;
-    return total;
-}
-
 function canCraft(recipe) {
-    for (let [resource, amt] of Object.entries(recipe.cost)) {
-        if (!hasInInventory(resource, amt)) return false;
+    for (let [res, amt] of Object.entries(recipe.cost)) {
+        if (!hasInInventory(res, amt)) return false;
     }
     return true;
 }
 
-// ========== CRAFTING ==========
 function craftItem(recipe, scene) {
-    console.log("Crafting:", recipe.name);
-    
     if (!canCraft(recipe)) {
-        if (scene) scene.showMessage('Missing materials!', 0xff4444);
+        scene.showMessage('❌ Missing materials!', 0xff6666);
         return false;
     }
-    
-    for (let [resource, amt] of Object.entries(recipe.cost)) {
-        removeFromInventory(resource, amt);
+    for (let [res, amt] of Object.entries(recipe.cost)) {
+        removeFromInventory(res, amt);
     }
-    
     addToInventory(recipe.result, 1);
-    updateCraftingUI();
-    
-    if (scene) scene.showMessage(recipe.resultName + ' crafted!', 0xffaa44);
-    console.log("Crafted successfully!");
+    updateInventoryUI();
+    updateCraftingPanel();
+    scene.showMessage(`✔️ ${recipe.resultName} crafted!`, 0xaaffaa);
     return true;
 }
 
-// ========== CREATE SCENE ==========
-function create() {
-    groundY = this.game.config.height - 50;
-
-    // Bind showMessage to scene
-    this.showMessage = function(msg, color) {
-        if (!player) return;
-        let hex = '#' + color.toString(16).padStart(6, '0');
-        let text = this.add.text(player.x, player.y - 50, msg, {
-            fontSize: '16px', fill: hex, stroke: '#000', strokeThickness: 2, fontFamily: 'monospace'
-        }).setOrigin(0.5).setDepth(50);
-        this.tweens.add({
-            targets: text, y: text.y - 40, alpha: 0, duration: 800,
-            onComplete: () => text.destroy()
+// --------------------------------------------------------------
+// HTML CRAFTING PANEL
+// --------------------------------------------------------------
+function updateCraftingPanel() {
+    const container = document.getElementById('recipe-list');
+    if (!container) return;
+    container.innerHTML = '';
+    for (let recipe of recipes) {
+        const affordable = canCraft(recipe);
+        const costStr = Object.entries(recipe.cost).map(([r,a]) => `${getItemIcon(r)}${a}`).join(' ');
+        const div = document.createElement('div');
+        div.className = 'recipe';
+        div.innerHTML = `
+            <div class="recipe-info">
+                ${recipe.icon} ${recipe.name}<br>
+                <span>${costStr}</span>
+            </div>
+            <button data-recipe="${recipe.name}" ${affordable ? '' : 'disabled'}>CRAFT</button>
+        `;
+        container.appendChild(div);
+    }
+    document.querySelectorAll('#recipe-list button').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const recipeName = btn.getAttribute('data-recipe');
+            const recipe = recipes.find(r => r.name === recipeName);
+            if (recipe && canCraft(recipe)) {
+                const scene = game.scene.scenes[0];
+                craftItem(recipe, scene);
+            }
         });
-    };
+    });
+}
 
-    // ========== WORLD ==========
-    ground = this.physics.add.staticGroup();
-    for (let x = -1000; x < worldWidth + 1000; x += 50) {
-        let gp = this.add.rectangle(x, groundY, 50, 50, 0x8B5A2B);
-        ground.add(gp);
+function openCraftPanel() {
+    updateCraftingPanel();
+    document.getElementById('craftingPanel').style.display = 'flex';
+}
+
+function closeCraftPanel() {
+    document.getElementById('craftingPanel').style.display = 'none';
+}
+
+// --------------------------------------------------------------
+// DRAG & DROP (using screen coordinates)
+// --------------------------------------------------------------
+function startDrag(sourceType, index, item) {
+    if (!item || !item.type) return;
+    dragActive = true;
+    dragSource = { type: sourceType, index: index, item: { type: item.type, count: item.count } };
+    // Visual feedback
+    if (sourceType === 'hotbar') {
+        hotbarSlots[index].bg.setAlpha(0.5);
+    } else {
+        inventorySlots[index].bg.setAlpha(0.5);
+    }
+}
+
+function cancelDrag() {
+    if (dragActive && dragSource) {
+        if (dragSource.type === 'hotbar') {
+            hotbarSlots[dragSource.index].bg.setAlpha(1);
+        } else if (dragSource.type === 'inventory') {
+            inventorySlots[dragSource.index].bg.setAlpha(1);
+        }
+    }
+    dragActive = false;
+    dragSource = null;
+}
+
+function finishDrag(targetType, targetIndex) {
+    if (!dragActive || !dragSource) return;
+
+    // restore source alpha
+    if (dragSource.type === 'hotbar') {
+        hotbarSlots[dragSource.index].bg.setAlpha(1);
+    } else {
+        inventorySlots[dragSource.index].bg.setAlpha(1);
     }
 
-    // Player at center
+    // swap
+    const sourceArray = dragSource.type === 'hotbar' ? hotbar : inventory;
+    const targetArray = targetType === 'hotbar' ? hotbar : inventory;
+    const sourceItem = sourceArray[dragSource.index];
+    const targetItem = targetArray[targetIndex];
+
+    sourceArray[dragSource.index] = targetItem ? { ...targetItem } : { type: null, count: 0 };
+    targetArray[targetIndex] = dragSource.item ? { ...dragSource.item } : { type: null, count: 0 };
+
+    updateHotbarUI();
+    if (menuOpen) updateInventoryUI();
+
+    dragActive = false;
+    dragSource = null;
+}
+
+// --------------------------------------------------------------
+// CREATE SCENE
+// --------------------------------------------------------------
+function create() {
+    groundY = this.game.config.height - 55;
+
+    // World generation
+    groundLayer = this.physics.add.staticGroup();
+    for (let x = -500; x < worldWidth + 500; x += 50) {
+        let block = this.add.rectangle(x, groundY, 50, 50, 0x8B5A2B);
+        groundLayer.add(block);
+    }
+
     let spawnX = worldWidth / 2;
-    player = this.add.rectangle(spawnX, groundY - 50, 30, 30, 0x00ff00);
+    player = this.add.rectangle(spawnX, groundY - 45, 28, 28, 0x6fbf4c);
     this.physics.add.existing(player);
     player.body.setCollideWorldBounds(true);
     player.body.setGravityY(300);
-    this.physics.add.collider(player, ground);
+    this.physics.add.collider(player, groundLayer);
     this.physics.world.setBounds(0, 0, worldWidth, this.game.config.height);
 
-    // ========== RESOURCES ==========
     // Sticks
-    for (let i = 0; i < 60; i++) {
-        let x = Math.random() * (worldWidth - 2000) + 1000;
-        let stick = this.add.rectangle(x, groundY - 15, 12, 12, 0xCD853F);
+    for (let i = 0; i < 80; i++) {
+        let x = 800 + Math.random() * (worldWidth - 1600);
+        let stick = this.add.rectangle(x, groundY - 14, 12, 12, 0xC97E3A);
         this.physics.add.existing(stick);
         stick.body.setImmovable(true);
         stick.body.setAllowGravity(false);
@@ -228,247 +373,229 @@ function create() {
     }
 
     // Trees
-    for (let i = 0; i < 80; i++) {
-        let x = Math.random() * (worldWidth - 2000) + 1000;
-        let trunk = this.add.rectangle(x, groundY - 40, 25, 50, 0x654321);
+    for (let i = 0; i < 90; i++) {
+        let x = 800 + Math.random() * (worldWidth - 1600);
+        let trunk = this.add.rectangle(x, groundY - 45, 26, 55, 0x8B5A2B);
         this.physics.add.existing(trunk);
         trunk.body.setImmovable(true);
         trunk.body.setAllowGravity(false);
-        
-        let leaves = this.add.rectangle(x, groundY - 65, 45, 40, 0x2d6b2d);
+        let leaves = this.add.rectangle(x, groundY - 75, 48, 42, 0x5A9E4E);
         this.physics.add.existing(leaves);
         leaves.body.setImmovable(true);
         leaves.body.setAllowGravity(false);
-        
         trunk.treeHealth = 3;
         trunk.woodAmount = 5;
         trunk.leavesObj = leaves;
         trees.push(trunk);
     }
 
-    // Stone rocks
-    for (let i = 0; i < 50; i++) {
-        let x = Math.random() * (worldWidth - 2000) + 1000;
-        let rock = this.add.rectangle(x, groundY - 25, 35, 35, 0x808080);
+    // Rocks
+    for (let i = 0; i < 55; i++) {
+        let x = 800 + Math.random() * (worldWidth - 1600);
+        let rock = this.add.rectangle(x, groundY - 28, 34, 28, 0x888888);
         this.physics.add.existing(rock);
         rock.body.setImmovable(true);
         rock.body.setAllowGravity(false);
         rock.rockHealth = 5;
-        stoneRocks.push(rock);
+        rocks.push(rock);
     }
 
-    // ========== BUILD UI ==========
+    // Build UI (hotbar and inventory slots directly on scene)
     buildHotbar.call(this);
-    buildMenuPanel.call(this);
+    buildInventorySlots.call(this);   // inventory slots as direct scene objects
 
-    // ========== CONTROLS ==========
+    // Background for inventory area (non-interactive, just visual)
+    const hotbarBottom = 16 + 44 + 12;
+    const invCols = 10, invRows = 2;
+    const slotW = 44, pad = 5;
+    const totalWidth = invCols * slotW + (invCols-1)*pad + 30;
+    const inventoryHeight = invRows * slotW + (invRows-1)*pad + 30;
+    const totalHeight = inventoryHeight + 20;
+    inventoryBackground = this.add.rectangle(16 + totalWidth/2, hotbarBottom + totalHeight/2, totalWidth, totalHeight, 0x0a0a0a, 0.96)
+        .setScrollFactor(0).setDepth(9);
+    inventoryBackground.setStrokeStyle(2, 0xffaa44);
+    inventoryTitle = this.add.text(16+10, hotbarBottom+5, '📦 INVENTORY', { fontSize: '14px', fill: '#ffaa44' })
+        .setScrollFactor(0).setDepth(9);
+    
+    // Hide inventory UI initially
+    setInventoryVisible(false);
+
+    // Global pointerup for drag & drop
+    this.input.on('pointerup', (pointer) => {
+        if (!menuOpen) {
+            cancelDrag();
+            return;
+        }
+        if (!dragActive) return;
+
+        const screenX = pointer.x;
+        const screenY = pointer.y;
+
+        let targetType = null;
+        let targetIndex = -1;
+
+        // Check hotbar slots
+        for (let i = 0; i < hotbarSlots.length; i++) {
+            const bounds = hotbarSlots[i].bg.getBounds();
+            if (screenX >= bounds.left && screenX <= bounds.right &&
+                screenY >= bounds.top && screenY <= bounds.bottom) {
+                targetType = 'hotbar';
+                targetIndex = i;
+                break;
+            }
+        }
+        // Check inventory slots (only if menu open)
+        if (targetType === null && menuOpen) {
+            for (let i = 0; i < inventorySlots.length; i++) {
+                const bounds = inventorySlots[i].bg.getBounds();
+                if (screenX >= bounds.left && screenX <= bounds.right &&
+                    screenY >= bounds.top && screenY <= bounds.bottom) {
+                    targetType = 'inventory';
+                    targetIndex = inventorySlots[i].index;
+                    break;
+                }
+            }
+        }
+
+        if (targetType !== null && targetIndex !== -1) {
+            finishDrag(targetType, targetIndex);
+        } else {
+            cancelDrag();
+        }
+    });
+
+    // Controls
     this.cursors = this.input.keyboard.addKeys({
-        left: Phaser.Input.Keyboard.KeyCodes.A,
-        right: Phaser.Input.Keyboard.KeyCodes.D,
-        leftArrow: Phaser.Input.Keyboard.KeyCodes.LEFT,
+        left:    Phaser.Input.Keyboard.KeyCodes.A,
+        right:   Phaser.Input.Keyboard.KeyCodes.D,
+        leftArrow:  Phaser.Input.Keyboard.KeyCodes.LEFT,
         rightArrow: Phaser.Input.Keyboard.KeyCodes.RIGHT,
-        jump: Phaser.Input.Keyboard.KeyCodes.SPACE,
+        jump:    Phaser.Input.Keyboard.KeyCodes.SPACE,
         upArrow: Phaser.Input.Keyboard.KeyCodes.UP,
         interact: Phaser.Input.Keyboard.KeyCodes.E
     });
 
-    // Number keys for hotbar - FIXED
-    this.input.keyboard.on('keydown-ONE', () => { if (!menuOpen) { selectedSlot = 0; updateHotbarUI(); console.log("Slot 1 selected"); } });
-    this.input.keyboard.on('keydown-TWO', () => { if (!menuOpen) { selectedSlot = 1; updateHotbarUI(); console.log("Slot 2 selected"); } });
-    this.input.keyboard.on('keydown-THREE', () => { if (!menuOpen) { selectedSlot = 2; updateHotbarUI(); console.log("Slot 3 selected"); } });
-    this.input.keyboard.on('keydown-FOUR', () => { if (!menuOpen) { selectedSlot = 3; updateHotbarUI(); console.log("Slot 4 selected"); } });
-    this.input.keyboard.on('keydown-FIVE', () => { if (!menuOpen) { selectedSlot = 4; updateHotbarUI(); console.log("Slot 5 selected"); } });
-    this.input.keyboard.on('keydown-SIX', () => { if (!menuOpen) { selectedSlot = 5; updateHotbarUI(); console.log("Slot 6 selected"); } });
-    this.input.keyboard.on('keydown-SEVEN', () => { if (!menuOpen) { selectedSlot = 6; updateHotbarUI(); console.log("Slot 7 selected"); } });
-    this.input.keyboard.on('keydown-EIGHT', () => { if (!menuOpen) { selectedSlot = 7; updateHotbarUI(); console.log("Slot 8 selected"); } });
-    this.input.keyboard.on('keydown-NINE', () => { if (!menuOpen) { selectedSlot = 8; updateHotbarUI(); console.log("Slot 9 selected"); } });
-    this.input.keyboard.on('keydown-ZERO', () => { if (!menuOpen) { selectedSlot = 9; updateHotbarUI(); console.log("Slot 0 selected"); } });
-
-    // ESC to open/close menu
-    this.input.keyboard.on('keydown-ESC', () => {
-        menuOpen = !menuOpen;
-        menuPanel.setVisible(menuOpen);
-        if (menuOpen) {
-            updateInventoryUI();
-            updateCraftingUI();
-        }
-    });
-    
-    // E to collect sticks
-    this.input.keyboard.on('keydown-E', () => {
+    // Hotbar keys
+    for (let i = 1; i <= 9; i++) {
+        this.input.keyboard.on(`keydown-${i}`, () => { if (!menuOpen) { selectedSlot = i-1; updateHotbarUI(); } });
+    }
+    this.input.keyboard.on('keydown-ZERO', () => { if (!menuOpen) { selectedSlot = 9; updateHotbarUI(); } });
+    window.addEventListener('keydown', (e) => {
         if (menuOpen) return;
-        for (let i = sticks.length - 1; i >= 0; i--) {
-            let stick = sticks[i];
-            let dist = Phaser.Math.Distance.Between(player.x, player.y, stick.x, stick.y);
-            if (dist < REACH_DISTANCE) {
-                stick.destroy();
-                sticks.splice(i, 1);
-                addToInventory('stick', 1);
-                this.showMessage('+1 Stick', 0xCD853F);
-            }
+        const key = e.key;
+        if (key >= '1' && key <= '9') {
+            selectedSlot = parseInt(key) - 1;
+            updateHotbarUI();
+            e.preventDefault();
+        } else if (key === '0') {
+            selectedSlot = 9;
+            updateHotbarUI();
+            e.preventDefault();
         }
     });
-    
-    // Scroll wheel for hotbar
+
     this.input.on('wheel', (pointer, objs, deltaX, deltaY) => {
         if (!menuOpen) {
-            if (deltaY > 0) selectedSlot = Math.min(9, selectedSlot + 1);
-            else selectedSlot = Math.max(0, selectedSlot - 1);
+            if (deltaY > 0) selectedSlot = (selectedSlot + 1) % 10;
+            else selectedSlot = (selectedSlot - 1 + 10) % 10;
             updateHotbarUI();
         }
     });
-    
-    // Add test sticks
+
+    this.input.keyboard.on('keydown-ESC', () => {
+        menuOpen = !menuOpen;
+        setInventoryVisible(menuOpen);
+        if (menuOpen) {
+            updateInventoryUI();
+            openCraftPanel();
+        } else {
+            closeCraftPanel();
+            cancelDrag();
+        }
+    });
+
+    this.input.keyboard.on('keydown-E', () => {
+        if (menuOpen) return;
+        for (let i = sticks.length-1; i >= 0; i--) {
+            let stick = sticks[i];
+            let dist = Phaser.Math.Distance.Between(player.x, player.y, stick.x, stick.y);
+            if (dist < REACH) {
+                stick.destroy();
+                sticks.splice(i,1);
+                addToInventory('stick', 1);
+                this.showMessage('🌿 +1 Stick', 0xCD853F);
+            }
+        }
+    });
+
+    this.showMessage = function(msg, color) {
+        let text = this.add.text(player.x, player.y-45, msg, {
+            fontSize: '18px', fill: '#'+color.toString(16), stroke: '#000', strokeThickness: 2, fontFamily: 'monospace'
+        }).setOrigin(0.5).setDepth(50);
+        this.tweens.add({
+            targets: text, y: text.y-45, alpha: 0, duration: 900,
+            onComplete: () => text.destroy()
+        });
+    };
+
+    // Give starting sticks for testing
     addToInventory('stick', 20);
     updateHotbarUI();
 }
 
-// ========== BUILD HOTBAR ==========
+function setInventoryVisible(visible) {
+    inventoryBackground.setVisible(visible);
+    inventoryTitle.setVisible(visible);
+    for (let slot of inventorySlots) {
+        slot.bg.setVisible(visible);
+        slot.icon.setVisible(visible);
+        slot.countTxt.setVisible(visible);
+    }
+}
+
+// --------------------------------------------------------------
+// HOTBAR
+// --------------------------------------------------------------
 function buildHotbar() {
-    const SLOT_SIZE = 42;
-    const SLOT_PAD = 4;
-    const HB_X = 16;
-    const HB_Y = 16;
-    
+    const slotW = 44, slotH = 44, pad = 5;
+    const startX = 16, startY = 16;
+    const totalW = 10 * slotW + 9 * pad;
     hotbarSlots = [];
-    
-    // Background
-    this.add.rectangle(
-        HB_X + (SLOT_SIZE * 10 + SLOT_PAD * 9) / 2,
-        HB_Y + SLOT_SIZE / 2,
-        SLOT_SIZE * 10 + SLOT_PAD * 9 + 16,
-        SLOT_SIZE + 12,
-        0x000000, 0.85
-    ).setScrollFactor(0).setDepth(10);
-    
+
+    this.add.rectangle(startX + totalW/2, startY + slotH/2, totalW + 18, slotH + 14, 0x000000, 0.8)
+        .setScrollFactor(0).setDepth(9);
+
     for (let i = 0; i < 10; i++) {
-        let sx = HB_X + i * (SLOT_SIZE + SLOT_PAD);
-        let sy = HB_Y;
-        
-        let bg = this.add.rectangle(sx + SLOT_SIZE/2, sy + SLOT_SIZE/2, SLOT_SIZE, SLOT_SIZE, 0x333333)
+        let x = startX + i * (slotW + pad);
+        let y = startY;
+        let bg = this.add.rectangle(x + slotW/2, y + slotH/2, slotW, slotH, 0x333333)
             .setScrollFactor(0).setDepth(10);
-        bg.setStrokeStyle(1, 0x555555);
-        
-        let icon = this.add.text(sx + SLOT_SIZE/2, sy + SLOT_SIZE/2, '', { fontSize: '24px' })
+        bg.setStrokeStyle(1, 0x777777);
+        let icon = this.add.text(x + slotW/2, y + slotH/2, '', { fontSize: '28px' })
             .setOrigin(0.5).setScrollFactor(0).setDepth(11);
+        let countTxt = this.add.text(x + slotW - 6, y + slotH - 6, '', {
+            fontSize: '12px', fill: '#fff', fontFamily: 'monospace'
+        }).setOrigin(1,1).setScrollFactor(0).setDepth(12);
+        let keyTxt = this.add.text(x + 5, y + slotH - 6, i===9?'0':(i+1).toString(), {
+            fontSize: '11px', fill: '#aaa', fontFamily: 'monospace'
+        }).setOrigin(0,1).setScrollFactor(0).setDepth(12);
         
-        let countTxt = this.add.text(sx + SLOT_SIZE - 4, sy + SLOT_SIZE - 4, '', {
-            fontSize: '11px', fill: '#fff', fontFamily: 'monospace'
-        }).setOrigin(1, 1).setScrollFactor(0).setDepth(12);
-        
-        let keyTxt = this.add.text(sx + 3, sy + SLOT_SIZE - 3, i === 9 ? '0' : (i+1).toString(), {
-            fontSize: '10px', fill: '#aaa', fontFamily: 'monospace'
-        }).setOrigin(0, 1).setScrollFactor(0).setDepth(12);
-        
-        hotbarSlots.push({ bg, icon, countTxt, keyTxt, index: i });
-    }
-    
-    // Selection frame
-    hotbarFrame = this.add.rectangle(
-        HB_X + SLOT_SIZE/2,
-        HB_Y + SLOT_SIZE/2,
-        SLOT_SIZE + 4, SLOT_SIZE + 4,
-        0xffffff, 0
-    ).setScrollFactor(0).setDepth(13);
-    hotbarFrame.setStrokeStyle(2, 0xffff00);
-}
-
-// ========== BUILD MENU PANEL ==========
-function buildMenuPanel() {
-    const SLOT_SIZE = 42;
-    const SLOT_PAD = 4;
-    const HB_X = 16;
-    const HB_Y = 16;
-    const HOTBAR_BOTTOM = HB_Y + SLOT_SIZE + 12;
-    
-    const INV_COLS = 10;
-    const INV_ROWS = 2;
-    const CRAFT_VISIBLE = 5;
-    const CRAFT_HEIGHT = 52;
-    
-    menuPanel = this.add.container(0, 0).setScrollFactor(0).setDepth(20);
-    menuPanel.setVisible(false);
-    
-    let totalWidth = INV_COLS * SLOT_SIZE + (INV_COLS - 1) * SLOT_PAD + 16;
-    let inventoryHeight = INV_ROWS * SLOT_SIZE + (INV_ROWS - 1) * SLOT_PAD + 16;
-    let craftingHeight = CRAFT_VISIBLE * CRAFT_HEIGHT + 30;
-    let totalHeight = inventoryHeight + craftingHeight + 10;
-    
-    // Background
-    let bg = this.add.rectangle(
-        HB_X + totalWidth / 2,
-        HOTBAR_BOTTOM + totalHeight / 2,
-        totalWidth,
-        totalHeight,
-        0x000000, 0.92
-    );
-    bg.setStrokeStyle(2, 0xffaa44);
-    menuPanel.add(bg);
-    
-    // Inventory title
-    let invTitle = this.add.text(HB_X + 10, HOTBAR_BOTTOM + 5, 'INVENTORY', { fontSize: '12px', fill: '#ffaa44', fontFamily: 'monospace' });
-    menuPanel.add(invTitle);
-    
-    // Inventory slots
-    inventorySlots = [];
-    for (let r = 0; r < INV_ROWS; r++) {
-        for (let c = 0; c < INV_COLS; c++) {
-            let idx = r * INV_COLS + c;
-            let sx = HB_X + c * (SLOT_SIZE + SLOT_PAD) + SLOT_SIZE/2;
-            let sy = HOTBAR_BOTTOM + 25 + r * (SLOT_SIZE + SLOT_PAD) + SLOT_SIZE/2;
-            
-            let slotBg = this.add.rectangle(sx, sy, SLOT_SIZE, SLOT_SIZE, 0x2a2a2a);
-            slotBg.setStrokeStyle(1, 0x555555);
-            let icon = this.add.text(sx, sy, '', { fontSize: '24px' }).setOrigin(0.5);
-            let countTxt = this.add.text(sx + SLOT_SIZE/2 - 4, sy + SLOT_SIZE/2 - 4, '', {
-                fontSize: '11px', fill: '#fff', fontFamily: 'monospace'
-            }).setOrigin(1, 1);
-            
-            menuPanel.add([slotBg, icon, countTxt]);
-            inventorySlots.push({ bg: slotBg, icon, countTxt, index: idx });
-        }
-    }
-    
-    // Crafting section
-    let craftY = HOTBAR_BOTTOM + 25 + INV_ROWS * (SLOT_SIZE + SLOT_PAD) + 15;
-    let craftTitle = this.add.text(HB_X + 10, craftY, 'CRAFTING', { fontSize: '12px', fill: '#ffaa44', fontFamily: 'monospace' });
-    menuPanel.add(craftTitle);
-    
-    let scene = this;
-    craftingSlots = [];
-    
-    for (let i = 0; i < CRAFT_VISIBLE; i++) {
-        let y = craftY + 20 + i * CRAFT_HEIGHT;
-        let recipe = recipes[i];
-        
-        let slotBg = this.add.rectangle(HB_X + 10, y + 25, totalWidth - 20, 48, 0x332200);
-        slotBg.setStrokeStyle(1, 0xffaa44);
-        
-        let icon = this.add.text(HB_X + 25, y + 25, '', { fontSize: '22px' }).setOrigin(0, 0.5);
-        let nameText = this.add.text(HB_X + 55, y + 15, '', { fontSize: '11px', fill: '#fff', fontFamily: 'monospace' }).setOrigin(0, 0.5);
-        let costText = this.add.text(HB_X + 55, y + 35, '', { fontSize: '9px', fill: '#aaa', fontFamily: 'monospace' }).setOrigin(0, 0.5);
-        
-        let craftBtn = this.add.rectangle(HB_X + totalWidth - 70, y + 25, 55, 38, 0x446644);
-        craftBtn.setStrokeStyle(1, 0x88ff88);
-        let craftBtnText = this.add.text(HB_X + totalWidth - 70, y + 25, 'CRAFT', { fontSize: '10px', fill: '#fff', fontFamily: 'monospace' }).setOrigin(0.5);
-        craftBtn.setInteractive();
-        
-        // IMPORTANT: Capture recipe and scene in closure
-        craftBtn.on('pointerdown', (function(r, s) {
-            return function() {
-                craftItem(r, s);
-            };
-        })(recipe, scene));
-        
-        menuPanel.add([slotBg, icon, nameText, costText, craftBtn, craftBtnText]);
-        craftingSlots.push({ 
-            bg: slotBg, icon, nameText, costText, craftBtn, craftBtnText, 
-            recipe: recipe
+        bg.setInteractive({ useHandCursor: true });
+        bg.on('pointerdown', (pointer, localX, localY, event) => {
+            if (!menuOpen) return;
+            const item = hotbar[i];
+            if (item && item.type) {
+                startDrag('hotbar', i, item);
+            }
         });
+        hotbarSlots.push({ bg, icon, countTxt, index: i });
     }
+
+    hotbarFrame = this.add.rectangle(startX + slotW/2, startY + slotH/2, slotW+6, slotH+6, 0xffffff, 0)
+        .setScrollFactor(0).setDepth(13);
+    hotbarFrame.setStrokeStyle(3, 0xffcc44);
 }
 
-// ========== UI UPDATE FUNCTIONS ==========
 function updateHotbarUI() {
     for (let i = 0; i < hotbarSlots.length; i++) {
         let slot = hotbarSlots[i];
@@ -483,20 +610,52 @@ function updateHotbarUI() {
             slot.bg.setFillStyle(0x333333);
         }
     }
-    
-    // Update selection frame position
-    const SLOT_SIZE = 42;
-    const SLOT_PAD = 4;
-    const HB_X = 16;
-    const HB_Y = 16;
-    let fx = HB_X + selectedSlot * (SLOT_SIZE + SLOT_PAD) + SLOT_SIZE / 2;
-    let fy = HB_Y + SLOT_SIZE / 2;
+    const slotW = 44, pad = 5, startX = 16, startY = 16;
+    let fx = startX + selectedSlot * (slotW + pad) + slotW/2;
+    let fy = startY + slotW/2;
     hotbarFrame.setPosition(fx, fy);
 }
 
+// --------------------------------------------------------------
+// INVENTORY SLOTS (direct scene objects)
+// --------------------------------------------------------------
+function buildInventorySlots() {
+    const slotW = 44, pad = 5;
+    const startX = 16;
+    const hotbarBottom = 16 + 44 + 12;
+    const invCols = 10, invRows = 2;
+
+    inventorySlots = [];
+    for (let r = 0; r < invRows; r++) {
+        for (let c = 0; c < invCols; c++) {
+            let idx = r * invCols + c;
+            let sx = startX + c * (slotW + pad) + slotW/2;
+            let sy = hotbarBottom + 30 + r * (slotW + pad) + slotW/2;
+            let slotBg = this.add.rectangle(sx, sy, slotW, slotW, 0x2a2a2a)
+                .setScrollFactor(0).setDepth(10);
+            slotBg.setStrokeStyle(1, 0x666666);
+            let icon = this.add.text(sx, sy, '', { fontSize: '26px' }).setOrigin(0.5)
+                .setScrollFactor(0).setDepth(11);
+            let countTxt = this.add.text(sx + slotW/2 - 5, sy + slotW/2 - 5, '', {
+                fontSize: '12px', fill: '#fff'
+            }).setOrigin(1,1).setScrollFactor(0).setDepth(12);
+
+            slotBg.setInteractive({ useHandCursor: true });
+            slotBg.on('pointerdown', (pointer, localX, localY, event) => {
+                if (!menuOpen) return;
+                const item = inventory[idx];
+                if (item && item.type) {
+                    startDrag('inventory', idx, item);
+                }
+            });
+
+            inventorySlots.push({ bg: slotBg, icon, countTxt, index: idx });
+        }
+    }
+}
+
 function updateInventoryUI() {
-    for (let i = 0; i < inventorySlots.length; i++) {
-        let slot = inventorySlots[i];
+    for (let slot of inventorySlots) {
         let item = inventory[slot.index];
         if (item && item.type && item.count > 0) {
             slot.icon.setText(getItemIcon(item.type));
@@ -510,106 +669,79 @@ function updateInventoryUI() {
     }
 }
 
-function updateCraftingUI() {
-    for (let i = 0; i < craftingSlots.length; i++) {
-        let slot = craftingSlots[i];
-        let recipe = slot.recipe;
-        
-        if (recipe) {
-            let affordable = canCraft(recipe);
-            slot.icon.setText(recipe.icon);
-            slot.nameText.setText(recipe.name);
-            
-            let costStr = Object.entries(recipe.cost).map(([r, a]) => `${getItemIcon(r)}${a}`).join(' ');
-            slot.costText.setText(costStr);
-            
-            slot.bg.setVisible(true);
-            slot.icon.setVisible(true);
-            slot.nameText.setVisible(true);
-            slot.costText.setVisible(true);
-            slot.craftBtn.setVisible(true);
-            slot.craftBtnText.setVisible(true);
-            slot.craftBtn.setFillStyle(affordable ? 0x446644 : 0x444444);
-        }
-    }
-}
-
 function getItemIcon(type) {
-    const icons = {
+    const map = {
         'stick': '🌿', 'wood': '🪵', 'stone': '🪨',
         'wooden_axe': '🪓', 'wooden_pickaxe': '⛏️',
         'stone_axe': '🪓', 'stone_pickaxe': '⛏️', 'stone_sword': '⚔️'
     };
-    return icons[type] || '📦';
+    return map[type] || '📦';
 }
 
-// ========== GAME UPDATE LOOP ==========
+// --------------------------------------------------------------
+// UPDATE LOOP
+// --------------------------------------------------------------
 function update() {
-    if (!player.body) return;
-    
-    // Movement
+    if (!player) return;
+
     player.body.setVelocityX(0);
-    if (this.cursors.left.isDown || this.cursors.leftArrow.isDown) player.body.setVelocityX(-350);
-    if (this.cursors.right.isDown || this.cursors.rightArrow.isDown) player.body.setVelocityX(350);
+    let left = this.cursors.left.isDown || this.cursors.leftArrow.isDown;
+    let right = this.cursors.right.isDown || this.cursors.rightArrow.isDown;
+    if (left) player.body.setVelocityX(-360);
+    if (right) player.body.setVelocityX(360);
     if ((this.cursors.jump.isDown || this.cursors.upArrow.isDown) && player.body.touching.down) {
-        player.body.setVelocityY(-450);
+        player.body.setVelocityY(-460);
     }
-    
-    // World bounds
-    if (player.x < 50) player.x = 50;
-    if (player.x > worldWidth - 50) player.x = worldWidth - 50;
-    
-    // Attack cooldown
+    player.x = Math.min(Math.max(player.x, 30), worldWidth - 30);
+
     if (!canAttack) {
         attackTimer--;
         if (attackTimer <= 0) canAttack = true;
     }
-    
-    // Mouse actions (mining/chopping)
+
     if (!menuOpen && this.input.activePointer.leftButtonDown() && canAttack) {
         let worldPoint = this.cameras.main.getWorldPoint(this.input.activePointer.x, this.input.activePointer.y);
-        let clickDist = Phaser.Math.Distance.Between(player.x, player.y, worldPoint.x, worldPoint.y);
-        
-        if (clickDist <= REACH_DISTANCE) {
-            let selectedItem = hotbar[selectedSlot];
-            let isAxe = selectedItem && (selectedItem.type === 'wooden_axe' || selectedItem.type === 'stone_axe');
-            let isPickaxe = selectedItem && (selectedItem.type === 'wooden_pickaxe' || selectedItem.type === 'stone_pickaxe');
-            
+        let distToPlayer = Phaser.Math.Distance.Between(player.x, player.y, worldPoint.x, worldPoint.y);
+        if (distToPlayer <= REACH) {
+            let tool = hotbar[selectedSlot];
+            let isAxe = tool && (tool.type === 'wooden_axe' || tool.type === 'stone_axe');
+            let isPick = tool && (tool.type === 'wooden_pickaxe' || tool.type === 'stone_pickaxe');
+
             if (isAxe) {
                 for (let i = 0; i < trees.length; i++) {
                     let tree = trees[i];
-                    let dist = Phaser.Math.Distance.Between(worldPoint.x, worldPoint.y, tree.x, tree.y);
-                    if (dist < 40) {
+                    let d = Phaser.Math.Distance.Between(worldPoint.x, worldPoint.y, tree.x, tree.y);
+                    if (d < 42) {
                         canAttack = false;
-                        attackTimer = 15;
+                        attackTimer = 12;
                         tree.treeHealth--;
-                        this.showMessage(`Chop! (${tree.treeHealth}/3)`, 0xffaa44);
+                        this.showMessage(`💥 Chop! (${tree.treeHealth}/3)`, 0xffaa66);
                         if (tree.treeHealth <= 0) {
-                            let woodAmount = tree.woodAmount;
+                            let woodAmt = tree.woodAmount;
                             tree.destroy();
                             if (tree.leavesObj) tree.leavesObj.destroy();
-                            trees.splice(i, 1);
-                            addToInventory('wood', woodAmount);
-                            this.showMessage(`+${woodAmount} Wood`, 0x8B4513);
+                            trees.splice(i,1);
+                            addToInventory('wood', woodAmt);
+                            this.showMessage(`🪵 +${woodAmt} Wood`, 0xBB8844);
                         }
                         break;
                     }
                 }
             }
-            else if (isPickaxe) {
-                for (let i = 0; i < stoneRocks.length; i++) {
-                    let rock = stoneRocks[i];
-                    let dist = Phaser.Math.Distance.Between(worldPoint.x, worldPoint.y, rock.x, rock.y);
-                    if (dist < 40) {
+            else if (isPick) {
+                for (let i = 0; i < rocks.length; i++) {
+                    let rock = rocks[i];
+                    let d = Phaser.Math.Distance.Between(worldPoint.x, worldPoint.y, rock.x, rock.y);
+                    if (d < 40) {
                         canAttack = false;
-                        attackTimer = 15;
+                        attackTimer = 12;
                         rock.rockHealth--;
-                        this.showMessage(`Mine! (${rock.rockHealth}/5)`, 0xffaa44);
+                        this.showMessage(`⛏️ Mine! (${rock.rockHealth}/5)`, 0xbbaa88);
                         if (rock.rockHealth <= 0) {
                             rock.destroy();
-                            stoneRocks.splice(i, 1);
+                            rocks.splice(i,1);
                             addToInventory('stone', 3);
-                            this.showMessage('+3 Stone', 0xaaaaaa);
+                            this.showMessage(`🪨 +3 Stone`, 0xaaaaaa);
                         }
                         break;
                     }
@@ -617,10 +749,9 @@ function update() {
             }
         }
     }
-    
-    // Camera follow
-    let targetX = player.x - this.game.config.width / 2;
-    targetX = Math.max(0, Math.min(targetX, worldWidth - this.game.config.width));
+
+    let targetX = player.x - this.game.config.width/2;
+    targetX = Math.min(Math.max(targetX, 0), worldWidth - this.game.config.width);
     this.cameras.main.scrollX = targetX;
 }
 </script>
