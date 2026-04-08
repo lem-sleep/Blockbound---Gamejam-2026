@@ -5,7 +5,7 @@
   <title>ProjectE — Combined Mini-Terraria</title>
   <style>
     html,body{height:100%;margin:0;background:#82c0ff;font-family:Arial,Helvetica,sans-serif;overflow:hidden}
-    #game{display:block}
+    #game{display:block;position:relative;z-index:0}
     .hud { position:fixed; left:0; top:0; width:100%; pointer-events:none; z-index:10 }
     .controls-hint{position:fixed; bottom:18px; right:18px; background:rgba(0,0,0,0.6); color:#fff; padding:10px 12px; border-radius:8px; font-family:monospace; font-size:12px; pointer-events:none; z-index:10}
     .hotbar { position:fixed; left:50%; transform:translateX(-50%); bottom:14px; display:flex; gap:8px; pointer-events:auto; z-index:10 }
@@ -103,7 +103,9 @@
   </div>
   <div class="row">
     <div class="panel" style="flex:0.6">
-      <div style="font-size:13px;color:#ccc;margin-bottom:8px">Inventory</div>
+      <div style="font-size:13px;color:#ffd64d;margin-bottom:6px">Hotbar</div>
+      <div id="hotbarGrid" style="display:grid;grid-template-columns:repeat(10,1fr);gap:6px;margin-bottom:10px"></div>
+      <div style="font-size:13px;color:#ccc;margin-bottom:6px">Backpack</div>
       <div id="inventoryGrid" style="display:grid;grid-template-columns:repeat(10,1fr);gap:6px"></div>
     </div>
     <div class="panel" style="flex:0.4">
@@ -226,13 +228,13 @@ let mining = { tx: -1, ty: -1, progress: 0 }; // tile being mined + progress 0..
 // How long each tile type takes to mine (in seconds)
 function getMineTime(tileType, toolType) {
   // Base times
-  const base = { 1: 2.0, 2: 1.5, 3: 1.2, 5: 0.6 }; // dirt, grass, trunk, leaves
+  const base = { 1: 2.0, 2: 1.5, 3: 1.2, 4: 3.0, 5: 0.6 }; // dirt, grass, trunk, stone, leaves
   let time = base[tileType] || 1.0;
   // Tool speed bonuses
   if ((tileType === 3 || tileType === 5) && (toolType === 'wooden_axe' || toolType === 'stone_axe')) {
     time *= (toolType === 'stone_axe') ? 0.35 : 0.5;
   }
-  if ((tileType === 1 || tileType === 2) && (toolType === 'wooden_pickaxe' || toolType === 'stone_pickaxe')) {
+  if ((tileType === 1 || tileType === 2 || tileType === 4) && (toolType === 'wooden_pickaxe' || toolType === 'stone_pickaxe')) {
     time *= (toolType === 'stone_pickaxe') ? 0.35 : 0.5;
   }
   return time;
@@ -248,6 +250,7 @@ function getTileDrop(tileType, tx, ty) {
   if (tileType === 5) {  // leaves
     return Math.random() < 0.4 ? 'stick' : 'wood';
   }
+  if (tileType === 4) return 'stone'; // stone ore drops stone
   if (tileType === 1 || tileType === 2) return null; // dirt/grass
   return null;
 }
@@ -401,6 +404,19 @@ function updateHotbarDOM() {
 // INVENTORY UI
 // ============================================================
 function buildInventoryUI() {
+  // Hotbar section in inventory panel
+  const hotbarGrid = document.getElementById('hotbarGrid');
+  if (hotbarGrid) {
+    hotbarGrid.innerHTML = '';
+    for (let i = 0; i < hotbar.length; i++) {
+      const d = hotbar[i];
+      const el = document.createElement('div');
+      el.style.cssText = 'min-height:36px;background:' + (i === selected ? '#3a3a1a' : '#2a2a2a') + ';border:1px solid ' + (i === selected ? '#ffd64d' : 'transparent') + ';border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px';
+      el.textContent = d.type ? getItemIcon(d.type) + (d.count > 1 ? (' x' + d.count) : '') : '';
+      hotbarGrid.appendChild(el);
+    }
+  }
+  // Backpack section
   invGrid.innerHTML = '';
   for (let i = 0; i < inventory.length; i++) {
     const d = inventory[i];
@@ -595,7 +611,7 @@ function buildSlotList() {
           pauseMenu.style.display = 'none';
           pauseOverlay.style.display = 'none';
           mainMenu.style.display = 'none';
-          hudEl.style.display = '';
+          hudEl.style.display = 'block';
           gameState = STATE.PLAYING;
         }
       } else {
@@ -655,8 +671,8 @@ function generateWorld() {
     let cy = baseGround + 10 + Math.floor(Math.random() * 22);
     const caveRadius = 2.5 + Math.random() * 5.5;
 
-    for (let y = cy - caveRadius; y <= cy + caveRadius; y++) {
-      for (let x = cx - caveRadius; x <= cx + caveRadius; x++) {
+    for (let y = Math.floor(cy - caveRadius); y <= cy + caveRadius; y++) {
+      for (let x = Math.floor(cx - caveRadius); x <= cx + caveRadius; x++) {
         if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H) continue;
         if (Math.hypot(x - cx, y - cy) < caveRadius) {
           if (world[y][x] === 1 || world[y][x] === 4) world[y][x] = 0;
@@ -665,25 +681,21 @@ function generateWorld() {
     }
   }
 
-  // === FIXED: Generate trees AFTER hills and caves ===
-  console.log("🌲 Generating trees...");
+  // Generate trees — always use actual surface height at each x
   let treeCount = 0;
-
-  for (let x = 12; x < WORLD_W - 12; x += 7) {
-    if (Math.random() < 0.42) {
-      createTree(x, baseGround);
+  for (let x = 10; x < WORLD_W - 10; x += 5) {
+    if (Math.random() < 0.35) {
+      createTree(x, surfaceY[x]);
       treeCount++;
     }
   }
-
-  // Extra random trees
-  for (let x = 12; x < WORLD_W - 12; x += 7) {
-    if (Math.random() < 0.42) createTree(x, surfaceY[x]);
-  }
-
-  for (let i = 0; i < 18; i++) {
-    const rx = 15 + Math.floor(Math.random() * (WORLD_W - 30));
-    if (Math.random() < 0.32) createTree(rx, surfaceY[rx]);
+  // Extra random trees in gaps
+  for (let i = 0; i < 20; i++) {
+    const rx = 10 + Math.floor(Math.random() * (WORLD_W - 20));
+    if (Math.random() < 0.4) {
+      createTree(rx, surfaceY[rx]);
+      treeCount++;
+    }
   }
   // spawn visible ground items (sticks/stone)
   spawnGroundItems(surfaceY);
@@ -748,7 +760,7 @@ function spawnGroundItems(surfaceY) {
 function solid(tx, ty) {
   if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) return false;
   const t = world[ty]?.[tx];
-  return t === 1 || t === 2;
+  return t === 1 || t === 2 || t === 4;
 }
 
 // ============================================================
@@ -979,9 +991,14 @@ function drawTile(t, screenX, screenY, size, timeNow, tileX) {
     ctx.fillRect(screenX + inset + sway, screenY + inset, size - inset * 2, size - inset * 2);
   }
   else if (t === 4) {
-    ctx.fillStyle = '#A0522D';
+    ctx.fillStyle = '#6B6B6B';
+    ctx.fillRect(screenX, screenY, size, size);
+    ctx.fillStyle = '#888';
     ctx.beginPath();
-    ctx.arc(screenX + size / 2, screenY + size / 2, size * 0.19, 0, Math.PI * 2);
+    ctx.arc(screenX + size * 0.3, screenY + size * 0.4, size * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(screenX + size * 0.7, screenY + size * 0.6, size * 0.12, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -1053,7 +1070,7 @@ function handleMouseActions(dt) {
       // Check if we can mine this tile
       let canMine = false;
       if (tile === 3 || tile === 5) canMine = true; // wood/leaves always mineable
-      if ((tile === 1 || tile === 2) && (toolType === 'wooden_pickaxe' || toolType === 'stone_pickaxe')) canMine = true;
+      if ((tile === 1 || tile === 2 || tile === 4) && (toolType === 'wooden_pickaxe' || toolType === 'stone_pickaxe')) canMine = true;
 
       if (canMine) {
         // If targeting a new tile, reset progress
@@ -1071,9 +1088,17 @@ function handleMouseActions(dt) {
           // Block broken!
           const drop = getTileDrop(tile, mx, my);   // pass coordinates for tree logic
           world[my][mx] = 0;
-  
-          // If no drop was returned (e.g. dirt), do nothing extra
-          mining.tx = -1; 
+
+          // Create drop item (tree drops are handled inside getTileDrop/breakWholeTree)
+          if (drop && tile !== 3) {
+            drops.push({
+              x: mx * TILE + 8, y: my * TILE + 8,
+              vy: -80 - Math.random() * 60,
+              vx: (Math.random() - 0.5) * 80,
+              type: drop
+            });
+          }
+          mining.tx = -1;
           mining.ty = -1; 
           mining.progress = 0;
         }
@@ -1159,9 +1184,8 @@ window.addEventListener('wheel', e => {
 function startNewGame() {
   // 1. IMMEDIATELY hide the menu and show the game UI
   mainMenu.style.display = 'none';
-  mainMenu.style.visibility = 'hidden';
   hudEl.style.display = 'block';
-  
+
   // 2. Reset game state and variables
   gameState = STATE.PLAYING;
   hotbar = Array.from({ length: 10 }, () => ({ type: null, count: 0 }));
@@ -1222,6 +1246,7 @@ function quitToMenu() {
   debugConsole.style.display = 'none';
   debugVisible = false;
   mainMenu.style.display = 'flex';
+  mainMenu.style.visibility = '';
   updateLoadBtnState();
 }
 
@@ -1314,7 +1339,7 @@ buildSlotList = function() {
           saveSlotPanel.style.display = 'none';
           slotOverlay.style.display = 'none';
           mainMenu.style.display = 'none';
-          hudEl.style.display = '';
+          hudEl.style.display = 'block';
           gameState = STATE.PLAYING;
         }
       } else {
