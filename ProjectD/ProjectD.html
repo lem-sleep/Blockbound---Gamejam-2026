@@ -312,7 +312,29 @@ const SpriteArt = {
         // Added some "bindings" (rope/vines)
         ctx.fillStyle = '#4a3728';
         ctx.fillRect(x, y+5*p, 8*p, p);
-    }
+    },
+
+    drawWoodenSword: (ctx, x, y, width, height) => {
+        const pw = width / 8;
+        const ph = height / 20;
+
+        // 1. BLADE (Wooden Plank Look)
+        ctx.fillStyle = '#8B4513'; // Dark wood base
+        ctx.fillRect(x + 3*pw, y + 2*ph, 2*pw, 12*ph);
+        
+        // Wood grain detail
+        ctx.fillStyle = '#A0522D'; 
+        ctx.fillRect(x + 3*pw, y + 4*ph, pw, 2*ph);
+        ctx.fillRect(x + 4*pw, y + 9*ph, pw, 3*ph);
+
+        // 2. GUARD (Crossed stick)
+        ctx.fillStyle = '#5D4037'; 
+        ctx.fillRect(x + 1*pw, y + 14*ph, 6*pw, 2*ph);
+
+        // 3. HANDLE
+        ctx.fillStyle = '#3E2723';
+        ctx.fillRect(x + 3*pw, y + 16*ph, 2*pw, 4*ph);
+    },
 };
 
 // 2. The Generator (Fixed and Robust)
@@ -326,6 +348,7 @@ function generateSprites() {
         canvas.height = 32;
 
         const itemsToDraw = [
+            { name: 'sword', draw: SpriteArt.drawWoodenSword }, // Use the wooden art for the base sword
             { name: 'bone_sword', draw: SpriteArt.drawBoneSword },
             { name: 'bone_bow', draw: SpriteArt.drawBoneBow },
             { name: 'glowing_bone', draw: SpriteArt.drawGlowingBone },
@@ -335,8 +358,8 @@ function generateSprites() {
         itemsToDraw.forEach(item => {
             ctx.clearRect(0, 0, 32, 32);
             
-            if (item.name === 'bone_sword') {
-                // Pass both width (32) and height (32)
+            // Remember: drawWoodenSword and drawBoneSword need (ctx, x, y, width, height)
+            if (item.name === 'sword' || item.name === 'bone_sword') {
                 item.draw(ctx, 0, 0, 32, 32);
             } else {
                 item.draw(ctx, 0, 0, 32);
@@ -687,16 +710,16 @@ function showMessage(text, isError) {
 // ITEM DATA
 // ============================================================
 function getItemIcon(type) {
-  // 1. Check for Bone items
-  if (['bone_sword', 'bone_bow', 'glowing_bone', 'reinforced_spikes'].includes(type) && !itemImages[type]) {
+  // 1. Check for custom items (including the base 'sword')
+  if (['sword', 'bone_sword', 'bone_bow', 'glowing_bone', 'reinforced_spikes'].includes(type) && !itemImages[type]) {
     const tempCanvas = document.createElement('canvas');
     const tCtx = tempCanvas.getContext('2d');
     tempCanvas.width = 32;
     tempCanvas.height = 32;
-    tCtx.imageSmoothingEnabled = false;
 
-    if (type === 'bone_sword') {
-      // ADDED THE HEIGHT ARGUMENT (32)
+    if (type === 'sword') {
+      SpriteArt.drawWoodenSword(tCtx, 0, 0, 32, 32);
+    } else if (type === 'bone_sword') {
       SpriteArt.drawBoneSword(tCtx, 0, 0, 32, 32);
     } else if (type === 'bone_bow') {
       SpriteArt.drawBoneBow(tCtx, 0, 0, 32);
@@ -709,7 +732,7 @@ function getItemIcon(type) {
     itemImages[type] = tempCanvas.toDataURL();
   }
 
-  // 2. Return Image if it exists
+  // 2. Display the image if it exists
   if (itemImages[type]) {
     let extraClass = (type.includes('glowing') || type.includes('bone')) ? 'rare-glow' : '';
     return `<img src="${itemImages[type]}" class="item-icon ${extraClass}" 
@@ -2036,17 +2059,13 @@ function drawWeapon(ctx) {
   const item = hotbar[selected];
   if (!item || !item.type) return;
 
-  // 1. CATEGORIZE ITEMS
   const isWeapon = ['knife', 'sword', 'bone_sword'].includes(item.type);
   const isTool = ['pickaxe', 'axe', 'stone_pickaxe', 'bone_pickaxe'].includes(item.type);
   const isBow = ['bow', 'bone_bow'].includes(item.type);
-  const isMaterial = ['wood', 'stone', 'glowing_bone'].includes(item.type);
-
-  if (!isWeapon && !isTool && !isBow && !isMaterial) return;
 
   ctx.save();
   
-  // 2. POSITIONING
+  // POSITIONING
   const bob = Math.sin(performance.now() / 120) * 3 * (player.vx !== 0 ? 1 : 0.2);
   const px = player.x + player.w / 2 - camera.x;
   const py = player.y + player.h / 2 - camera.y - bob;
@@ -2057,11 +2076,10 @@ function drawWeapon(ctx) {
     mouse.x + camera.x - (player.x + player.w / 2)
   );
 
-  // 3. DRAWING LOGIC
+  const facingLeft = (mouse.x + camera.x < player.x + player.w/2);
+
   if (isWeapon || isTool) {
-    const facingLeft = (mouse.x + camera.x < player.x + player.w/2);
     const baseAngle = mouseAngle + (Math.PI / 2); 
-    
     let swingOffset = 0;
     let reachBoost = 0; 
 
@@ -2074,28 +2092,24 @@ function drawWeapon(ctx) {
     ctx.rotate(baseAngle + swingOffset);
     ctx.scale(facingLeft ? -1 : 1, 1);
 
-    // --- DRAWING THE NEW SPRITE ---
+    // --- DRAW CUSTOM SPRITES ---
     if (item.type === 'bone_sword') {
-        const sw = 32;  // Width
-        const sh = 110;  // Height (stretched!)
-        
-        // IMPORTANT: We subtract almost the full height so the handle 
-        // sits at the (0,0) point of our translation.
-        const handleAnchor = -(sh - 8); 
-
-        SpriteArt.drawBoneSword(ctx, -sw/2, handleAnchor - reachBoost, sw, sh); 
-
+        // High Tier: Large and Bone-colored
+        SpriteArt.drawBoneSword(ctx, -16, -(85 - 8) - reachBoost, 32, 85); 
+    } else if (item.type === 'sword') {
+        // Low Tier: Smaller and Wooden
+        SpriteArt.drawWoodenSword(ctx, -12, -(50 - 6) - reachBoost, 24, 50);
     } else {
-        const img = itemImages[item.type] || itemImages[item.type + '_img'];
-        if (img && img.width > 0) {
-            const isSword = item.type.includes('sword') || item.type === 'knife';
-            const w = isSword ? 40 : 32;
-            const h = isSword ? 60 : 32; 
-            const yOff = isSword ? -(h - 8) : -35;
-            ctx.drawImage(img, -w/2, yOff - reachBoost, w, h);
+        const imgData = itemImages[item.type] || itemImages[item.type + '_img'];
+        if (imgData) {
+            const img = new Image(); img.src = imgData;
+            const w = 32; const h = 48;
+            ctx.drawImage(img, -w/2, -(h-8) - reachBoost, w, h);
         } else {
-            ctx.fillStyle = '#777';
-            ctx.fillRect(-2, -50 - reachBoost, 4, 50);
+            const emojis = { knife:'🔪', pickaxe:'⛏️', axe:'🪓' };
+            ctx.font = "24px serif";
+            ctx.textAlign = "center";
+            ctx.fillText(emojis[item.type] || '⚔️', 0, -20 - reachBoost);
         }
     }
 
@@ -2104,40 +2118,37 @@ function drawWeapon(ctx) {
     if (item.type === 'bone_bow') {
         SpriteArt.drawBoneBow(ctx, -2, -16, 32);
     } else {
-        ctx.strokeStyle = '#8B4513';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(8, 0, 14, -Math.PI/2, Math.PI/2);
-        ctx.stroke();
+        ctx.font = "24px serif";
+        ctx.textAlign = "center";
+        ctx.fillText('🏹', 8, 8);
     }
-
     ctx.strokeStyle = (item.type === 'bone_bow') ? 'rgba(255,255,255,0.9)' : '#eee';
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     const bowStringX = (item.type === 'bone_bow') ? 10 : 8; 
     ctx.moveTo(bowStringX, -12);
-    let pull = bowStringX;
-    if (player.isAttacking) {
-        pull = bowStringX - (15 * (1.0 - attackAnim));
-    }
+    let pull = bowStringX - (player.isAttacking ? (15 * (1.0 - attackAnim)) : 0);
     ctx.lineTo(pull, 0);
     ctx.lineTo(bowStringX, 12);
     ctx.stroke();
 
-  } else if (isMaterial) {
-    const facingLeft = (mouse.x + camera.x < player.x + player.w/2);
-    ctx.translate(facingLeft ? -10 : 10, 0); 
-    if (item.type === 'glowing_bone') {
-        SpriteArt.drawGlowingBone(ctx, -12, -12, 24);
+  } else {
+    // --- MATERIALS & EMOJIS ---
+    ctx.translate(facingLeft ? -12 : 12, 4); 
+    if (itemImages[item.type]) {
+        const img = new Image(); img.src = itemImages[item.type];
+        ctx.drawImage(img, -12, -12, 24, 24);
     } else {
-        ctx.fillStyle = (item.type === 'wood') ? '#8B4513' : '#777';
-        ctx.fillRect(-8, -8, 16, 16);
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(-8, -8, 16, 16);
+        const emojis = { 
+            wood:'🪵', stone:'🪨', dirt:'🟫', bone:'🦴', cloth:'🧶', 
+            arrow:'↑', bandage:'🩹', food:'🍗', spike_trap:'🪤' 
+        };
+        ctx.font = "24px serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(emojis[item.type] || '❓', 0, 0);
     }
   }
-
   ctx.restore();
 }
 
