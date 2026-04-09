@@ -1276,37 +1276,68 @@ function spawnMineParticles(x, y, tileType) {
 }
 
 function updateParticles(dt) {
-  // --- NEW: Spawn high-quality drifting mist in graveyard ---
-  const camCenterX = Math.floor((camera.x + canvas.width / 2) / TILE);
-  if (typeof getBiomeAt === 'function' && getBiomeAt(camCenterX) === 'graveyard') {
-    if (Math.random() < 0.2) { // Slightly more frequent for density
+  const camX = Math.floor(camera.x / TILE);
+  const camW = Math.ceil(canvas.width / TILE);
+  const camY = Math.floor(camera.y / TILE);
+  const camH = Math.ceil(canvas.height / TILE);
+
+  // --- Tile-Based Spawning (Souls/Wisps) ---
+  if (gameState === STATE.PLAYING && performance.now() % 10 < 2) {
+    for (let ty = camY; ty < camY + camH; ty++) {
+      for (let tx = camX; tx < camX + camW; tx++) {
+        if (!world[ty] || !world[ty][tx]) continue;
+
+        const tile = world[ty][tx];
+        if (tile === 7 || tile === 8) {
+          if (Math.random() < 0.03) { // Increased spawn rate slightly
+            particles.push({
+              x: tx * TILE + Math.random() * TILE,
+              y: ty * TILE + (tile === 8 ? 10 : 0),
+              vx: (Math.random() - 0.5) * 15,
+              vy: -25 - Math.random() * 20,
+              life: 3.0,
+              maxLife: 3.0,
+              size: tile === 8 ? 5 : 4, // Bigger particles
+              // Increased Alpha from 0.4/0.6 to 0.8
+              color: tile === 8 ? 'rgba(100, 200, 255, 0.8)' : 'rgba(100, 255, 150, 0.8)',
+              isWisp: true
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // --- Large Mist/Fog (More Opaque) ---
+  if (Math.random() < 0.06) { 
+    const camCenterX = Math.floor((camera.x + canvas.width / 2) / TILE);
+    if (typeof getBiomeAt === 'function' && getBiomeAt(camCenterX) === 'graveyard') {
       particles.push({
-        x: camera.x + canvas.width + 100, // Spawn further out for smoother entry
-        y: camera.y + Math.random() * canvas.height,
-        vx: -30 - Math.random() * 40, // Slower, heavier drift
-        vy: Math.sin(performance.now() / 1000) * 8, // Wavy "floating" motion
-        life: 5.0,
-        maxLife: 5.0,
-        color: 'rgba(200, 200, 230, 0.1)', // Pale ghostly blue
-        size: 120 + Math.random() * 100, // Much larger for better coverage
+        x: camera.x + canvas.width + 100, 
+        y: camera.y + canvas.height - Math.random() * 100,
+        vx: -60 - Math.random() * 40,
+        vy: 0,
+        life: 8.0,
+        maxLife: 8.0,
+        // Increased Alpha from 0.08 to 0.25
+        color: 'rgba(220, 220, 255, 0.25)', 
+        size: 120 + Math.random() * 80, 
         isFog: true 
       });
     }
   }
 
-  // --- EXISTING LOGIC ---
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    
-    // Mist doesn't fall, but we update its vertical wave
     if (p.isFog) {
-        p.vy = Math.sin((performance.now() + p.x) / 1000) * 5;
+        p.y += Math.sin((performance.now() + (p.x * 2)) / 1200) * 0.4;
+    } else if (p.isWisp) {
+        p.vx += Math.sin(performance.now() / 600) * 1.2;
     } else {
-        p.vy += 400 * dt; // Gravity for debris
+        p.vy += 400 * dt;
     }
-    
     p.life -= dt;
     if (p.life <= 0) particles.splice(i, 1);
   }
@@ -1314,29 +1345,40 @@ function updateParticles(dt) {
 
 function drawParticles() {
   for (const p of particles) {
-    const alpha = p.life / p.maxLife;
+    const alpha = p.life / (p.maxLife || 1.0);
+    const px = p.x - camera.x;
+    const py = p.y - camera.y;
     
     if (p.isFog) {
-      // Soft Radial Gradient for "Real" Fog
-      const grad = ctx.createRadialGradient(
-        p.x - camera.x, p.y - camera.y, 0,
-        p.x - camera.x, p.y - camera.y, p.size / 2
-      );
-      grad.addColorStop(0, p.color.replace('0.1', (0.15 * alpha).toString()));
-      grad.addColorStop(1, 'rgba(200, 200, 230, 0)'); // Fades to nothing
-
-      ctx.fillStyle = grad;
+      // Use a slightly higher alpha for the fog blobs
+      ctx.globalAlpha = alpha * 0.25; 
+      ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(p.x - camera.x, p.y - camera.y, p.size / 2, 0, Math.PI * 2);
+      ctx.arc(px, py, p.size / 2, 0, Math.PI * 2);
       ctx.fill();
+      
+    } else if (p.isWisp) {
+      // Inner Core (Very Visible)
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(px, py, p.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Outer Glow (Wider and more visible)
+      ctx.globalAlpha = alpha * 0.4;
+      ctx.beginPath();
+      ctx.arc(px, py, p.size * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+
     } else {
       // Standard debris
       ctx.globalAlpha = alpha;
       ctx.fillStyle = p.color;
-      ctx.fillRect(p.x - camera.x - p.size/2, p.y - camera.y - p.size/2, p.size, p.size);
+      ctx.fillRect(px - p.size/2, py - p.size/2, p.size, p.size);
     }
   }
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = 1.0;
 }
 
 // ============================================================
@@ -1891,7 +1933,10 @@ function update(dt) {
           const tx = Math.floor(a.x / TILE);
           const ty = Math.floor(a.y / TILE);
           // CHANGE 1: Added ID 7 and 8 to the hit list
-          if (world[ty] && [1, 2, 4, 5, 7, 8].includes(world[ty][tx])) { hit = true; break; }
+          if (world[ty] && [1, 2, 4, 5].includes(world[ty][tx])) { 
+                hit = true; 
+                break; 
+          }
           for (let j = zombies.length - 1; j >= 0; j--) {
               const z = zombies[j];
               if (a.x > z.x && a.x < z.x + z.w && a.y > z.y && a.y < z.y + z.h) {
@@ -2172,88 +2217,64 @@ function draw() {
   ctx.save();
   
   // 1. APPLY SCREEN SHAKE
-  // This shakes the entire world view
   if (screenShake > 0) {
     ctx.translate(Math.random() * screenShake - screenShake/2, Math.random() * screenShake - screenShake/2);
   }
 
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
+  // --- BIOME CHECK ---
+  const camCenterX = Math.floor((camera.x + canvas.width / 2) / TILE);
+  const isGraveyard = (typeof getBiomeAt === 'function' && getBiomeAt(camCenterX) === 'graveyard');
+
   const skyColor = getSkyColor();
   ctx.fillStyle = skyColor;
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  // Stars at night
+  // Stars & Moon logic
   if (isNight()) {
     const nightFrac = (getDayFraction() - NIGHT_START) / (DAWN_START - NIGHT_START);
     ctx.fillStyle = 'rgba(255,255,255,' + (0.5 + 0.3*Math.min(1, nightFrac*3)) + ')';
     for (let s=0; s<100; s++) {
-      const sx = ((s*173+47)%canvas.width);
-      const sy = ((s*89+11)%Math.floor(canvas.height*0.4));
-      const ss = 0.8 + (s%3)*0.5;
-      const twinkle = 0.6 + 0.4*Math.sin(performance.now()/600 + s*0.7);
-      ctx.globalAlpha = twinkle;
-      ctx.fillRect(sx,sy,ss,ss);
+      const sx = ((s*173+47)%canvas.width), sy = ((s*89+11)%Math.floor(canvas.height*0.4));
+      ctx.fillRect(sx,sy,1,1);
     }
-    ctx.globalAlpha = 1;
-  }
-
-  // Moon at night
-  if (isNight()) {
-    const nf = (getDayFraction() - NIGHT_START) / (DAWN_START - NIGHT_START);
-    const moonX = canvas.width * (0.15 + nf * 0.7);
-    const moonY = canvas.height * 0.12;
-    ctx.fillStyle = 'rgba(255,255,200,0.9)';
-    ctx.beginPath(); ctx.arc(moonX, moonY, 18, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#0d0d1a';
-    ctx.beginPath(); ctx.arc(moonX+8, moonY-4, 14, 0, Math.PI*2); ctx.fill();
   }
 
   if (world.length===0) return;
-
   const now = performance.now();
   const sx=Math.max(0,Math.floor(camera.x/TILE)-1), ex=Math.min(WORLD_W-1,Math.ceil((camera.x+canvas.width)/TILE)+1);
   const sy2=Math.max(0,Math.floor(camera.y/TILE)-1), ey=Math.min(WORLD_H-1,Math.ceil((camera.y+canvas.height)/TILE)+1);
 
-  // Draw mining target highlight
-  if (mining.active) {
-    const bx = mining.tx*TILE - camera.x;
-    const by = mining.ty*TILE - camera.y;
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.fillRect(bx, by, TILE, TILE);
-    const cracks = Math.floor((mining.progress / mining.maxTime) * 4);
-    if (cracks > 0) {
-      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-      ctx.lineWidth = 1.5;
-      for (let c=0;c<cracks;c++) {
-        ctx.beginPath();
-        ctx.moveTo(bx + 8 + c*4, by + 6);
-        ctx.lineTo(bx + 14 + c*3, by + 20 + c*2);
-        ctx.stroke();
-      }
-    }
-  }
-
+  // 2. DRAW TILES
   for (let y=sy2;y<=ey;y++) for (let x=sx;x<=ex;x++) {
     const t = world[y][x]; if (!t) continue;
     drawTile(t, x*TILE-camera.x, y*TILE-camera.y, TILE, now, x, y);
   }
 
-  // Mining range indicator
-  if (mouseRight && gameState === STATE.PLAYING) {
-    ctx.strokeStyle = 'rgba(255,255,100,0.12)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.arc(player.x+player.w/2-camera.x, player.y+player.h/2-camera.y, MINE_RANGE, 0, Math.PI*2);
-    ctx.stroke();
-    ctx.setLineDash([]);
+  // 3. DRAW BACKGROUND FOG (World-Anchored)
+  if (isGraveyard) {
+    ctx.save();
+    const time = now * 0.001;
+    const groundY = (WORLD_H * 0.5) * TILE - camera.y;
+    for (let i = 0; i < 3; i++) {
+        let x = ((time * (10 + i * 5)) + (i * 500)) % (canvas.width + 600) - 300;
+        let y = groundY + Math.sin(time + i) * 10; 
+        let grad = ctx.createRadialGradient(x, y, 10, x, y, 250);
+        grad.addColorStop(0, "rgba(40, 45, 60, 0.5)"); 
+        grad.addColorStop(1, "rgba(40, 45, 60, 0)");   
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(x, y, 400, 150, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
   }
 
-  // Drops
+  // 4. DRAW ENTITIES (Drops & Arrows)
   for (const d of drops) drawDrop(d.x-camera.x, d.y-camera.y, d.type);
-
-  // Arrows
+  
+  // RESTORED ARROW LOGIC
   for (const a of arrows) {
     ctx.save();
     ctx.translate(a.x - camera.x, a.y - camera.y);
@@ -2269,17 +2290,13 @@ function draw() {
     ctx.moveTo(-10, 0); 
     ctx.lineTo(10, 0); 
     ctx.stroke();
-    ctx.shadowBlur = 0; 
     ctx.restore();
   }
-
-  // Particles
+  
   drawParticles();
-
-  // Zombies
   for (const z of zombies) drawZombie(z);
 
-  // Player
+  // Player Draw
   const bob = Math.sin(now/120)*3*(player.vx!==0?1:0.2);
   const flash = player.invincibleTimer > 0 && Math.floor(now/80)%2===0;
   if (!flash) {
@@ -2294,62 +2311,54 @@ function draw() {
     ctx.fillStyle = '#882222';
     ctx.fillRect(player.x-camera.x+2, player.y-camera.y-bob+player.h-8, 10, 8+legAnim);
     ctx.fillRect(player.x-camera.x+player.w-12, player.y-camera.y-bob+player.h-8, 10, 8-legAnim);
-
     drawWeapon(ctx);
-
-    if (player.invincibleTimer > 1.5) {
-      ctx.strokeStyle = 'rgba(100,255,100,0.5)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(player.x-camera.x+player.w/2, player.y-camera.y+player.h/2, 26, 0, Math.PI*2);
-      ctx.stroke();
-    }
   }
 
-  // ---------- GRAVEYARD FOG OVERLAY ----------
-  // Check biome at camera center
-  const camCenterX = Math.floor((camera.x + canvas.width / 2) / TILE);
-  if (typeof getBiomeAt === 'function' && getBiomeAt(camCenterX) === 'graveyard') {
+  // 5. DRAW FOREGROUND FOG (World-Anchored)
+  if (isGraveyard) {
     ctx.save();
-    // 1. Subtle Purple/Gray Tint
-    ctx.globalAlpha = 0.25; 
-    ctx.fillStyle = "#2a2a3a"; 
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // 2. Darker Vignette (Makes corners spooky)
-    const vignette = ctx.createRadialGradient(
-      canvas.width/2, canvas.height/2, canvas.width*0.2, 
-      canvas.width/2, canvas.height/2, canvas.width*0.8
-    );
-    vignette.addColorStop(0, "rgba(0,0,0,0)");
-    vignette.addColorStop(1, "rgba(10, 0, 30, 0.5)");
-    ctx.fillStyle = vignette;
-    ctx.globalAlpha = 1.0;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const time = now * 0.001;
+    const groundY = (WORLD_H * 0.5) * TILE - camera.y;
+    ctx.globalCompositeOperation = 'screen'; 
+    for (let i = 0; i < 2; i++) {
+        let x = ((time * (30 + i * 10)) + (i * 700)) % (canvas.width + 600) - 300;
+        let y = groundY - 20 + Math.cos(time + i) * 15;
+        let grad = ctx.createRadialGradient(x, y, 0, x, y, 150);
+        grad.addColorStop(0, "rgba(180, 200, 255, 0.15)");
+        grad.addColorStop(1, "rgba(180, 200, 255, 0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(x, y, 300, 80, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // Vignette
+    const vig = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 50, canvas.width/2, canvas.height/2, canvas.width*0.8);
+    vig.addColorStop(0, "rgba(0,0,0,0)");
+    vig.addColorStop(1, "rgba(10, 5, 25, 0.4)");
+    ctx.fillStyle = vig;
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.restore();
   }
 
-  // 2. DRAW FLOATING DAMAGE TEXT
-  // We draw this near the end so it's always visible on top
+  // 6. UI & HUD
   damageTexts.forEach(t => {
     ctx.save();
-    ctx.globalAlpha = Math.min(1, t.life * 2); // Fades out over time
+    ctx.globalAlpha = Math.min(1, t.life * 2);
     ctx.fillStyle = t.color;
-    ctx.font = "bold 16px 'Press Start 2P', Arial"; // Fallback to Arial if pixel font isn't loaded
+    ctx.font = "bold 16px Arial";
     ctx.textAlign = "center";
     ctx.fillText(t.text, t.x - camera.x, t.y - camera.y);
     ctx.restore();
   });
 
   drawHUD();
-
   if (gameState === STATE.PAUSED) {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(0,0,canvas.width,canvas.height);
   }
 
-  // 3. FINAL RESTORE
-  // This resets the Screen Shake translation for the next frame
   ctx.restore();
 }
 
