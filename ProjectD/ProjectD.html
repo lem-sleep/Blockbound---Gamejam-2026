@@ -1254,10 +1254,11 @@ function update(dt) {
   if (player.y > WORLD_H*TILE+200) { player.y=100; player.vy=0; }
 
   // ---------- 5. CAMERA ----------
-  camera.tx = player.x - canvas.width/2;
-  camera.ty = player.y - canvas.height/2;
-  camera.tx = Math.max(0, Math.min(WORLD_W*TILE-canvas.width, camera.tx));
-  camera.ty = Math.max(0, Math.min(WORLD_H*TILE-canvas.height, camera.ty));
+  // ============================================================
+  camera.tx = player.x + player.w/2 - canvas.width/2;
+  camera.ty = player.y + player.h/2 - canvas.height/2;
+  camera.tx = Math.max(0, Math.min(WORLD_W * TILE - canvas.width, camera.tx));
+  camera.ty = Math.max(0, Math.min(WORLD_H * TILE - canvas.height, camera.ty));
   camera.x += (camera.tx - camera.x) * Math.min(1, 10 * dt);
   camera.y += (camera.ty - camera.y) * Math.min(1, 10 * dt);
 
@@ -1389,154 +1390,108 @@ function onPlayerDeath() {
 // MOUSE
 // ============================================================
 let mouse = { x: 0, y: 0, down: false };
-canvas.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
-// Prevent the browser's default right-click menu from popping up
-window.addEventListener('contextmenu', e => e.preventDefault());
+let buildTimer = 0;
+const BUILD_COOLDOWN = 0.15;
 
-canvas.addEventListener('mousedown', (e) => {
-  if (gameState !== STATE.PLAYING && gameState !== STATE.INVENTORY) return;
-  
+// This fixes the "offset" problem and the instant-placement bug
+window.addEventListener('mousemove', e => { 
   const rect = canvas.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
-  const tx = Math.floor((mouseX + camera.x) / TILE);
-  const ty = Math.floor((mouseY + camera.y) / TILE);
+  mouse.x = e.clientX - rect.left; 
+  mouse.y = e.clientY - rect.top; 
+});
 
-  if (e.button === 0) { // LEFT CLICK
-    const selectedItem = hotbar[selected];
-    let buildAttempted = false;
-
-    // ---------- BUILDING LOGIC (Updated for Dirt) ----------
-    // Added 'dirt' to the allowed building materials list
-    if (selectedItem && (selectedItem.type === 'wood' || selectedItem.type === 'stone' || selectedItem.type === 'dirt')) {
-      const dist = Math.hypot((tx * TILE + TILE/2) - (player.x + player.w/2), (ty * TILE + TILE/2) - (player.y + player.h/2));
-      
-      if (dist <= MINE_RANGE && world[ty] && world[ty][tx] === 0) {
-        // Updated IDs: Dirt is 1, Stone is 4, Wood is 5
-        if (selectedItem.type === 'wood') {
-          world[ty][tx] = 5;
-        } else if (selectedItem.type === 'stone') {
-          world[ty][tx] = 4;
-        } else if (selectedItem.type === 'dirt') {
-          world[ty][tx] = 1;
-        }
-        
-        selectedItem.count--;
-        if (selectedItem.count <= 0) {
-          selectedItem.type = null;
-          selectedItem.count = 0;
-        }
-        
-        updateHotbarDOM(); 
-        if (typeof buildInventoryUI === 'function') buildInventoryUI();
-        buildAttempted = true; 
-      }
-    }
-
-    // ---------- ATTACK LOGIC ----------
-    if (!buildAttempted) {
-      player.isAttacking = true; 
-      // Facing follows mouse click
-      lastFacing = (mouseX + camera.x > player.x + player.w/2) ? 1 : -1;
-      
-      const type = selectedItem?.type || 'fist';
-      player.currentWeaponType = type;
-
-      if (attackTimer <= 0) {
-        if (type === 'bow') {
-            attackAnim = 1.0; 
-        } else {
-            // This triggers the swing visual
-            attackAnim = 1.0;
-            // startNewMeleeSwing handles the damage
-            if (typeof startNewMeleeSwing === 'function') startNewMeleeSwing(selectedItem);
-        }
-      }
-    }
+window.addEventListener('mousedown', (e) => {
+  if (gameState !== STATE.PLAYING && gameState !== STATE.INVENTORY) return;
+  if (e.button === 0) { 
+    mouse.down = true; 
   } else if (e.button === 2) {
     mouseRight = true;
   }
 });
 
 window.addEventListener('mouseup', (e) => {
-  if (e.button === 0) { // Left Click
+  if (e.button === 0) { 
+    mouse.down = false; // CRITICAL FIX: Stops auto-placing/swinging
     player.isAttacking = false;
     
     if (player.currentWeaponType === 'bow' && attackTimer <= 0) {
-      // Strength is 0.0 to 1.0. 
-      // Since attackAnim starts at 1 and goes to 0, (1 - attackAnim) is our hold time.
       const strength = Math.min(1.0, 1.0 - attackAnim);
-
-      // Only fire if held for at least 10% draw
-      if (strength > 0.1) {
-        shootArrow(strength); 
-      }
-      
-      attackTimer = 0.8; // Cooldown
-      attackAnim = 0;   // Reset visual draw
+      if (strength > 0.1) shootArrow(strength); 
+      attackTimer = 0.8; 
+      attackAnim = 0; 
     }
-  } else if (e.button === 2) { // Right Click
+  } else if (e.button === 2) {
     mouseRight = false;
     mining.active = false;
     if (typeof miningBarEl !== 'undefined') miningBarEl.style.display = 'none';
   }
 });
 
-canvas.addEventListener('contextmenu', e => e.preventDefault());
+// Prevent right-click menu
+window.addEventListener('contextmenu', e => e.preventDefault());
 
 function handleMouseActions(dt) {
   if (gameState !== STATE.PLAYING) return;
   
-  // 1. Only act if the mouse is held down
+  // Update timers
+  if (buildTimer > 0) buildTimer -= dt;
+  
+  // ONLY act if the mouse is actually being held down
   if (!mouse.down) return;
 
   const item = hotbar[selected];
-  const type = item?.type || 'fist';
+  const type = item?.type;
+  if (!type || type === 'bow') return;
 
-  // 2. Ignore the bow (handled by mouseup event)
-  if (type === 'bow') return;
+  // Calculate Grid Position
+  const tx = Math.floor((mouse.x + camera.x) / TILE);
+  const ty = Math.floor((mouse.y + camera.y) / TILE);
+  const px = player.x + player.w / 2;
+  const py = player.y + player.h / 2;
 
-  // 3. Attack Cooldown Check
-  if (attackTimer <= 0) {
+  const dist = Math.hypot((tx * TILE + TILE/2) - px, (ty * TILE + TILE/2) - py);
+
+  // 2. AUTOMATIC BUILDING
+  const isBuildingMaterial = ['wood', 'stone', 'dirt'].includes(type);
+  if (isBuildingMaterial && item.count > 0) {
+    if (dist <= MINE_RANGE && world[ty] && world[ty][tx] === 0 && buildTimer <= 0) {
+      if (type === 'wood') world[ty][tx] = 5;
+      else if (type === 'stone') world[ty][tx] = 4;
+      else if (type === 'dirt') world[ty][tx] = 1;
+
+      item.count--;
+      if (item.count <= 0) { item.type = null; item.count = 0; }
+
+      buildTimer = BUILD_COOLDOWN; // Prevents dumping whole stack
+      updateHotbarDOM();
+      if (typeof buildInventoryUI === 'function') buildInventoryUI();
+    }
+  }
+
+  // 3. AUTOMATIC SWINGING (Melee)
+  if (attackTimer <= 0 && !isBuildingMaterial) {
     attackTimer = ATTACK_COOLDOWN;
-    attackAnim = 1; // Trigger the swing animation
+    attackAnim = 1;
 
     const dmg = getWeaponDamage(type);
     const range = getWeaponRange(type);
-    const px = player.x + player.w / 2;
-    const py = player.y + player.h / 2;
-
-    // Calculate exactly where the player is aiming
-    const mouseAngle = Math.atan2(
-      mouse.y + camera.y - py,
-      mouse.x + camera.x - px
-    );
+    const mouseAngle = Math.atan2(mouse.y + camera.y - py, mouse.x + camera.x - px);
 
     for (const z of zombies) {
       const zx = z.x + z.w / 2;
       const zy = z.y + z.h / 2;
-      const dist = Math.hypot(px - zx, py - zy);
+      const zDist = Math.hypot(px - zx, py - zy);
 
-      if (dist < range) {
-        // Calculate angle to this specific zombie
+      if (zDist < range) {
         const angleToZombie = Math.atan2(zy - py, zx - px);
-        
-        // Find the difference between aiming angle and zombie angle
         let diff = Math.abs(mouseAngle - angleToZombie);
-        
-        // Normalize the difference (handles the 180/-180 degree wrap-around)
         if (diff > Math.PI) diff = Math.abs(diff - Math.PI * 2);
 
-        // Only hit if the zombie is within a ~90-degree "cone" in front of the cursor
-        // (0.8 radians is roughly 45 degrees on each side)
         if (diff < 0.8) {
           z.health -= dmg;
           z.stunTimer = 0.15;
-          
-          // Knockback: Push them away from the player
           z.vx = Math.sign(zx - px) * 200;
           z.vy = -200;
-          
           spawnHitParticles(zx, zy, '#ff6600');
         }
       }
