@@ -411,6 +411,8 @@ const STATE = { MENU: 0, PLAYING: 1, PAUSED: 2, INVENTORY: 3, SLOTS: 4 };
 let gameState = STATE.MENU;
 let currentSlot = null;
 let slotMode = 'load';
+let screenShake = 0;
+let damageTexts = [];
 
 // ============================================================
 // WORLD
@@ -481,18 +483,37 @@ function startNewMeleeSwing(item) {
   
   for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
-    const dx = z.x - player.x;
+    const dx = (z.x + z.w/2) - (player.x + player.w/2);
     const dy = z.y - player.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist < range && Math.sign(dx) === lastFacing) {
       z.health -= dmg;
-      z.stunTimer = 0.2; 
-      z.vx = lastFacing * 180;
-      if (z.health <= 0) {
-        zombies.splice(i, 1);
-        if (typeof nightKillCount !== 'undefined') nightKillCount++;
+      
+      // --- NEW KNOCKBACK SETTINGS ---
+      let knockbackMult = 0;
+      let liftForce = 0;
+
+      if (item?.type === 'bone_sword') {
+        // MASSIVE PUSH: Sends them flying across the screen
+        knockbackMult = 800; 
+        liftForce = -300;   // Pops them higher into the air
+        screenShake = 14;   // Heavier camera shake
+        z.stunTimer = 0.6;  // Stays stunned longer
+      } else {
+        // LIGHT PUSH: Just moves them back a few steps
+        knockbackMult = 300; 
+        liftForce = -150; 
+        screenShake = 4;
+        z.stunTimer = 0.3;
       }
+
+      // Apply the physics
+      z.vx = lastFacing * knockbackMult;
+      z.vy = liftForce; 
+
+      // Spawn damage text
+      spawnDamageText(z.x + z.w/2, z.y, Math.round(dmg), "#ffffff");
     }
   }
 }
@@ -500,6 +521,18 @@ function startNewMeleeSwing(item) {
 function fireArrow(drawStrength) {
     showMessage(`Fired Arrow! Power: ${Math.round(drawStrength * 100)}%`);
     // Note: You can add actual arrow projectile logic here later!
+}
+
+function spawnDamageText(x, y, amount, color = "#ff4d4d") {
+    damageTexts.push({
+        x: x,
+        y: y,
+        text: amount,
+        color: color,
+        life: 1.0, // Duration in seconds
+        vx: (Math.random() - 0.5) * 60,
+        vy: -80
+    });
 }
 
 function createZombie(x, y, opts) {
@@ -1465,21 +1498,34 @@ function updateMining(dt) {
 function update(dt) {
   if (gameState === STATE.MENU || gameState === STATE.PAUSED) return;
 
-  // ---------- 1. TIMERS & ANIMATIONS ----------
+  // ---------- 1. TIMERS, ANIMATIONS & JUICE ----------
   if (attackTimer > 0) attackTimer -= dt;
   
-    if (attackAnim > 0) {
-        let animSpeed = 2.5; // Default wood pull speed
-        
-        if (player.currentWeaponType === 'bone_bow') {
-            animSpeed = 6.0; // Bone bow pulls back OVER TWICE as fast
-        } else if (player.currentWeaponType !== 'bow') {
-            animSpeed = 3.5; // Melee swing speed
-        }
-        
-        attackAnim -= dt * animSpeed;
-        if (attackAnim < 0) attackAnim = 0;
-    }
+  if (attackAnim > 0) {
+      let animSpeed = 2.5; 
+      if (player.currentWeaponType === 'bone_bow') {
+          animSpeed = 6.0; 
+      } else if (player.currentWeaponType !== 'bow') {
+          animSpeed = 3.5; 
+      }
+      attackAnim -= dt * animSpeed;
+      if (attackAnim < 0) attackAnim = 0;
+  }
+
+  // Decay Screen Shake
+  if (screenShake > 0) {
+    screenShake *= 0.9;
+    if (screenShake < 0.1) screenShake = 0;
+  }
+
+  // Update Damage Text particles
+  for (let i = damageTexts.length - 1; i >= 0; i--) {
+    const t = damageTexts[i];
+    t.x += t.vx * dt;
+    t.y += t.vy * dt;
+    t.life -= dt;
+    if (t.life <= 0) damageTexts.splice(i, 1);
+  }
 
   // Wave announce banner
   if (waveAnnounceTimer > 0) {
@@ -1499,7 +1545,6 @@ function update(dt) {
 
   const f = getDayFraction();
 
-  // Night warning
   if (f >= NIGHT_WARN && f < NIGHT_START && !nightWarningShown) {
     nightWarningShown = true;
     const secs = Math.round((NIGHT_START - f) * DAY_DURATION);
@@ -1508,7 +1553,6 @@ function update(dt) {
     setTimeout(() => { nightWarningEl.style.display='none'; }, 5000);
   }
 
-  // Spawn wave
   if (isNight() && !waveSpawned) {
     waveSpawned = true;
     waveNum++;
@@ -1517,7 +1561,6 @@ function update(dt) {
     spawnZombieWave(waveNum);
   }
 
-  // Wave clear detection
   if (isNight() && waveSpawned && !waveComplete && zombies.length === 0) {
     waveComplete = true;
     showWaveAnnounce('WAVE ' + waveNum + ' CLEARED!');
@@ -1526,15 +1569,8 @@ function update(dt) {
   // ---------- 3. PLAYER MOVEMENT & FACING ----------
   if (gameState === STATE.PLAYING) {
     player.vx = 0;
-    if (input.left) {
-        player.vx = -playerSpeed;
-        lastFacing = -1; // Face Left
-    } 
-    if (input.right) {
-        player.vx = playerSpeed;
-        lastFacing = 1;  // Face Right
-    }
-
+    if (input.left) { player.vx = -playerSpeed; lastFacing = -1; } 
+    if (input.right) { player.vx = playerSpeed; lastFacing = 1; }
     if (input.jump && player.onGround && !noclip) { 
         player.vy = -playerJump; 
         input.jump = false; 
@@ -1543,7 +1579,7 @@ function update(dt) {
 
   if (player.invincibleTimer > 0) player.invincibleTimer -= dt;
 
-  // ---------- 4. PHYSICS (Noclip vs Normal) ----------
+  // ---------- 4. PHYSICS ----------
   if (noclip) {
     player.vy = 0;
     if (input.jump && gameState === STATE.PLAYING) player.vy = -playerSpeed;
@@ -1551,9 +1587,7 @@ function update(dt) {
     player.y += player.vy * dt;
     player.onGround = true;
   } else {
-    player.vy += 1600 * dt; // Gravity
-    
-    // X collision
+    player.vy += 1600 * dt; 
     player.x += player.vx * dt;
     let l=Math.floor(player.x/TILE), r=Math.floor((player.x+player.w-1)/TILE);
     let t=Math.floor(player.y/TILE), b=Math.floor((player.y+player.h-1)/TILE);
@@ -1561,8 +1595,6 @@ function update(dt) {
       if (player.vx>0&&solid(r,y)) { player.x=r*TILE-player.w; player.vx=0; }
       if (player.vx<0&&solid(l,y)) { player.x=(l+1)*TILE; player.vx=0; }
     }
-
-    // Y collision
     player.y += player.vy * dt;
     l=Math.floor(player.x/TILE); r=Math.floor((player.x+player.w-1)/TILE);
     t=Math.floor(player.y/TILE); b=Math.floor((player.y+player.h-1)/TILE);
@@ -1575,12 +1607,10 @@ function update(dt) {
     }
   }
 
-  // World Bounds
   player.x = Math.max(0, Math.min(WORLD_W*TILE-player.w, player.x));
   if (player.y > WORLD_H*TILE+200) { player.y=100; player.vy=0; }
 
   // ---------- 5. CAMERA ----------
-  // ============================================================
   camera.tx = player.x + player.w/2 - canvas.width/2;
   camera.ty = player.y + player.h/2 - canvas.height/2;
   camera.tx = Math.max(0, Math.min(WORLD_W * TILE - canvas.width, camera.tx));
@@ -1595,13 +1625,9 @@ function update(dt) {
     d.y += d.vy*dt;
     d.x += (d.vx||0)*dt;
     if (d.vx) d.vx *= 0.94;
-    
-    // Simple ground landing for drops
     const bx = Math.floor((d.x+TILE/2)/TILE);
     const by = Math.floor((d.y+TILE-4)/TILE);
     if (by>=WORLD_H||solid(bx,by)) { d.vy=0; d.y=by*TILE-TILE+4; if(d.vx) d.vx*=0.5; }
-
-    // Magnetic Pickup
     const dist = Math.hypot(player.x+player.w/2-d.x-TILE/2, player.y+player.h/2-d.y-TILE/2);
     if (dist < TILE * 2.5) {
       const angle = Math.atan2(player.y+player.h/2 - (d.y+TILE/2), player.x+player.w/2 - (d.x+TILE/2));
@@ -1614,114 +1640,83 @@ function update(dt) {
     }
   }
 
-    // ---------- 7. ARROWS ----------
-    for (let i = arrows.length - 1; i >= 0; i--) {
-        const a = arrows[i];
-        a.life -= dt;
-        
-        // Use the arrow's custom gravity if it exists, otherwise default to 450
-        a.vy += (a.gravity || 450) * dt; 
-
-        let moveX = a.vx * dt;
-        let moveY = a.vy * dt;
-        let distance = Math.hypot(moveX, moveY);
-        
-        let hit = false;
-        for (let d = 0; d < distance; d++) {
-            a.x += moveX / distance;
-            a.y += moveY / distance;
-
-            const tx = Math.floor(a.x / TILE);
-            const ty = Math.floor(a.y / TILE);
-
-            // Check for solid world collision (IDs 1, 2, 4, 5)
-            if (world[ty] && [1, 2, 4, 5].includes(world[ty][tx])) {
-                hit = true;
-                break;
-            }
-
-            // Check for Zombie collision
-            for (let j = zombies.length - 1; j >= 0; j--) {
-                const z = zombies[j];
-                if (a.x > z.x && a.x < z.x + z.w && a.y > z.y && a.y < z.y + z.h) {
-                    z.health -= a.damage;
-                    z.stunTimer = 0.2;
-                    // Add some knockback based on arrow velocity
-                    z.vx += (a.vx * 0.1); 
-                    hit = true;
-                    
-                    // Spawn hit particles
-                    spawnHitParticles(a.x, a.y, a.color || '#ff6600');
-                    break;
-                }
-            }
-            if (hit) break;
-        }
-
-        if (hit || a.life <= 0) {
-            arrows.splice(i, 1);
-        }
-    }
+  // ---------- 7. ARROWS ----------
+  for (let i = arrows.length - 1; i >= 0; i--) {
+      const a = arrows[i];
+      a.life -= dt;
+      a.vy += (a.gravity || 450) * dt; 
+      let moveX = a.vx * dt;
+      let moveY = a.vy * dt;
+      let distance = Math.hypot(moveX, moveY);
+      let hit = false;
+      for (let d = 0; d < distance; d++) {
+          a.x += moveX / distance;
+          a.y += moveY / distance;
+          const tx = Math.floor(a.x / TILE);
+          const ty = Math.floor(a.y / TILE);
+          if (world[ty] && [1, 2, 4, 5].includes(world[ty][tx])) { hit = true; break; }
+          for (let j = zombies.length - 1; j >= 0; j--) {
+              const z = zombies[j];
+              if (a.x > z.x && a.x < z.x + z.w && a.y > z.y && a.y < z.y + z.h) {
+                  z.health -= a.damage;
+                  spawnDamageText(a.x, a.y, Math.round(a.damage), "#ffaa00"); 
+                  screenShake = 3; 
+                  z.stunTimer = 0.2; // Small arrow stun
+                  z.vx += (a.vx * 0.2); // Arrow knockback
+                  hit = true;
+                  spawnHitParticles(a.x, a.y, a.color || '#ff6600');
+                  break;
+              }
+          }
+          if (hit) break;
+      }
+      if (hit || a.life <= 0) arrows.splice(i, 1);
+  }
 
   // ---------- 8. ZOMBIES ----------
   for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
     
-    // Death & Bone Drop
+    // Death & Bone Drop (No "Killed" text)
     if (z.health <= 0) {
-        // 70% chance for a normal bone, 30% for a "Glowing Bone"
         let type = Math.random() > 0.95 ? 'glowing_bone' : 'bone';
-        drops.push({ 
-            x: z.x + 4, 
-            y: z.y, 
-            vy: -150, // Pop upwards
-            vx: (Math.random() - 0.5) * 100, 
-            type: type 
-        });
+        drops.push({ x: z.x + 4, y: z.y, vy: -150, vx: (Math.random() - 0.5) * 100, type: type });
         zombies.splice(i, 1);
         nightKillCount++;
         continue;
     }
 
-    if (z.stunTimer > 0) { z.stunTimer -= dt; continue; }
+    // Physics Update
+    z.vy += 1600 * dt; 
 
-    // --- IMPROVED SPIKE TRAP LOGIC ---
-    const gridX = Math.floor((z.x + z.w / 2) / TILE);
-    const gridY = Math.floor((z.y + z.h - 1) / TILE);
-    const currentTile = (world[gridY] && world[gridY][gridX]);
+    if (z.stunTimer > 0) {
+        // While stunned, AI is disabled so knockback works!
+        z.stunTimer -= dt;
+        z.vx *= 0.95; // Ground friction
+    } else {
+        // AI Movement (only if not stunned)
+        const gridX = Math.floor((z.x + z.w / 2) / TILE);
+        const gridY = Math.floor((z.y + z.h - 1) / TILE);
+        const currentTile = (world[gridY] && world[gridY][gridX]);
+        
+        if (currentTile === 6) { z.health -= 20 * dt; z.speed = 40; } 
+        else if (currentTile === 7) { z.health -= 60 * dt; z.speed = 30; } 
+        else { z.speed = 80; }
 
-    if (currentTile === 6) {
-        // Wooden Spikes
-        z.health -= 20 * dt; 
-        z.speed = 40; 
-    } 
-    else if (currentTile === 7) {
-        // Bone Spikes (ID 7)
-        z.health -= 60 * dt; // 3x the damage of wooden spikes!
-        z.speed = 30;        // Even slower (getting stuck on bone shards)
-    } 
-    else {
-        z.speed = 80; // Normal speed
+        const dir = (player.x + player.w / 2) - (z.x + z.w / 2);
+        z.vx = Math.abs(dir) > 4 ? Math.sign(dir) * z.speed : 0;
     }
 
-    // Movement Logic
-    const dir = (player.x + player.w / 2) - (z.x + z.w / 2);
-    z.vx = Math.abs(dir) > 4 ? Math.sign(dir) * z.speed : 0;
-    if (z.jumpCooldown > 0) z.jumpCooldown -= dt;
-
-    z.vy += 1600 * dt;
     z.x += z.vx * dt;
+    z.y += z.vy * dt;
 
     // Collision & Auto-Jump
-    const zl = Math.floor(z.x / TILE), zr = Math.floor((z.x + z.w - 1) / TILE);
-    const zt = Math.floor(z.y / TILE);
+    const zl = Math.floor(z.x / TILE), zr = Math.floor((z.x + z.w - 1) / TILE), zt = Math.floor(z.y / TILE);
     if (z.vx > 0 && solid(zr, zt)) { z.x = zr * TILE - z.w; if (z.onGround) z.vy = -450; }
     if (z.vx < 0 && solid(zl, zt)) { z.x = (zl + 1) * TILE; if (z.onGround) z.vy = -450; }
 
-    z.y += z.vy * dt;
     z.onGround = false;
-    const zb2 = Math.floor((z.y + z.h - 1) / TILE);
-    const zl2 = Math.floor(z.x / TILE);
+    const zb2 = Math.floor((z.y + z.h - 1) / TILE), zl2 = Math.floor(z.x / TILE);
     if (solid(zl2, zb2)) { z.y = zb2 * TILE - z.h; z.vy = 0; z.onGround = true; }
 
     // Damage player
@@ -1729,6 +1724,8 @@ function update(dt) {
       z.attackTimer -= dt;
       if (z.attackTimer <= 0 && !godmode && player.invincibleTimer <= 0) {
         player.health -= z.damage;
+        screenShake = 10; 
+        spawnDamageText(player.x + player.w/2, player.y, Math.round(z.damage), "#ff0000");
         player.invincibleTimer = 0.5;
         z.attackTimer = z.attackCooldown;
         if (player.health <= 0) onPlayerDeath();
@@ -1747,20 +1744,50 @@ let isDead = false;
 function onPlayerDeath() {
   if (isDead) return;
   isDead = true;
+  
   deathScreen.style.display = 'block';
   deathText.style.display = 'block';
   deathText.innerHTML = 'YOU DIED<br><span style="font-size:18px;color:#ff8888">Survived ' + dayCount + ' days, Wave ' + waveNum + '</span>';
+  
   setTimeout(() => {
+    // 1. RESET WORLD & PLAYER
     player.health = player.maxHealth;
     player.invincibleTimer = 3;
-    dayTime = 0; dayCount = 0; waveNum = 0; waveSpawned = false;
+    dayTime = 0; 
+    dayCount = 0; 
+    waveNum = 0; 
+    waveSpawned = false;
     zombies = [];
     nightWarningShown = false;
     waveComplete = false;
+
+    // 2. THE FIX: CLEAR BOTH ARRAYS
+    // Clear the main inventory
+    if (typeof inventory !== 'undefined') inventory.length = 0;
+    
+    // Clear the hotbar (this is what your UI uses!)
+    if (typeof hotbar !== 'undefined') {
+      for (let i = 0; i < hotbar.length; i++) {
+        hotbar[i] = { type: null, count: 0 }; 
+      }
+    }
+
+    // 3. RESET GEAR
+    player.currentWeaponType = null;
+    selected = 0; // Reset selected slot to the first one
+
+    // 4. REBUILD UI
+    // Now that hotbar[i].type is null, buildInventoryUI will draw empty boxes
+    buildInventoryUI();
+
+    // 5. RESPAWN
     isDead = false;
     deathScreen.style.display = 'none';
     deathText.style.display = 'none';
-    showMessage('Respawned at dawn. Prepare yourself!');
+    player.x = 100; 
+    player.y = 100;
+    
+    showMessage('You lost everything. Start over.');
   }, 3000);
 }
 
@@ -1903,6 +1930,14 @@ function handleMouseActions(dt) {
 // DRAW
 // ============================================================
 function draw() {
+  ctx.save();
+  
+  // 1. APPLY SCREEN SHAKE
+  // This shakes the entire world view
+  if (screenShake > 0) {
+    ctx.translate(Math.random() * screenShake - screenShake/2, Math.random() * screenShake - screenShake/2);
+  }
+
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
   const skyColor = getSkyColor();
@@ -1917,7 +1952,6 @@ function draw() {
       const sx = ((s*173+47)%canvas.width);
       const sy = ((s*89+11)%Math.floor(canvas.height*0.4));
       const ss = 0.8 + (s%3)*0.5;
-      // Twinkle
       const twinkle = 0.6 + 0.4*Math.sin(performance.now()/600 + s*0.7);
       ctx.globalAlpha = twinkle;
       ctx.fillRect(sx,sy,ss,ss);
@@ -1948,7 +1982,6 @@ function draw() {
     const by = mining.ty*TILE - camera.y;
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
     ctx.fillRect(bx, by, TILE, TILE);
-    // Crack effect
     const cracks = Math.floor((mining.progress / mining.maxTime) * 4);
     if (cracks > 0) {
       ctx.strokeStyle = 'rgba(0,0,0,0.6)';
@@ -1967,7 +2000,7 @@ function draw() {
     drawTile(t, x*TILE-camera.x, y*TILE-camera.y, TILE, now, x, y);
   }
 
-  // Mining range indicator (subtle circle when mining)
+  // Mining range indicator
   if (mouseRight && gameState === STATE.PLAYING) {
     ctx.strokeStyle = 'rgba(255,255,100,0.12)';
     ctx.lineWidth = 1.5;
@@ -1987,24 +2020,16 @@ function draw() {
     ctx.translate(a.x - camera.x, a.y - camera.y);
     const ang = Math.atan2(a.vy, a.vx);
     ctx.rotate(ang);
-
-    // --- COLOR LOGIC ---
-    // Use the arrow's individual color (cyan for bone, orange for wood)
     ctx.strokeStyle = a.color || '#c8a040'; 
     ctx.lineWidth = 3;
-
-    // Optional: Add a neon glow effect specifically for Bone Arrows
     if (a.color === '#4de6ff') {
       ctx.shadowBlur = 8;
       ctx.shadowColor = '#4de6ff';
     }
-
     ctx.beginPath(); 
     ctx.moveTo(-10, 0); 
     ctx.lineTo(10, 0); 
     ctx.stroke();
-
-    // Reset shadow so it doesn't leak into other drawings
     ctx.shadowBlur = 0; 
     ctx.restore();
   }
@@ -2019,17 +2044,13 @@ function draw() {
   const bob = Math.sin(now/120)*3*(player.vx!==0?1:0.2);
   const flash = player.invincibleTimer > 0 && Math.floor(now/80)%2===0;
   if (!flash) {
-    // Body
     ctx.fillStyle = '#cc3333';
     ctx.fillRect(player.x-camera.x, player.y-camera.y-bob, player.w, player.h);
-    // Head
     ctx.fillStyle = '#f8c8a0';
     ctx.fillRect(player.x-camera.x+4, player.y-camera.y-bob-13, player.w-8, 13);
-    // Eyes
     ctx.fillStyle = '#222';
     const eyeDir = lastFacing > 0 ? player.w-12 : 6;
     ctx.fillRect(player.x-camera.x+eyeDir, player.y-camera.y-bob-9, 3, 3);
-    // Legs animation
     const legAnim = Math.sin(now/80)*(player.vx!==0?4:0);
     ctx.fillStyle = '#882222';
     ctx.fillRect(player.x-camera.x+2, player.y-camera.y-bob+player.h-8, 10, 8+legAnim);
@@ -2037,7 +2058,6 @@ function draw() {
 
     drawWeapon(ctx);
 
-    // Invincibility glow
     if (player.invincibleTimer > 1.5) {
       ctx.strokeStyle = 'rgba(100,255,100,0.5)';
       ctx.lineWidth = 3;
@@ -2047,12 +2067,28 @@ function draw() {
     }
   }
 
+  // 2. DRAW FLOATING DAMAGE TEXT
+  // We draw this near the end so it's always visible on top
+  damageTexts.forEach(t => {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, t.life * 2); // Fades out over time
+    ctx.fillStyle = t.color;
+    ctx.font = "bold 16px 'Press Start 2P', Arial"; // Fallback to Arial if pixel font isn't loaded
+    ctx.textAlign = "center";
+    ctx.fillText(t.text, t.x - camera.x, t.y - camera.y);
+    ctx.restore();
+  });
+
   drawHUD();
 
   if (gameState === STATE.PAUSED) {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(0,0,canvas.width,canvas.height);
   }
+
+  // 3. FINAL RESTORE
+  // This resets the Screen Shake translation for the next frame
+  ctx.restore();
 }
 
 function drawWeapon(ctx) {
