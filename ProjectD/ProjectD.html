@@ -238,6 +238,14 @@
   
 <script>
 
+let biomeMap = [];
+const CHUNK_SIZE = 80; // Every 80 tiles is a new "zone"
+// Helper to get biome at any X coordinate
+function getBiomeAt(x) {
+    const index = Math.floor(x / CHUNK_SIZE);
+    return biomeMap[index] || 'forest';
+}
+
 // 1. Updated Art Studio with the full Bone Set
 // 1. The Art Studio (Corrected Syntax)
 const SpriteArt = {
@@ -390,7 +398,7 @@ resize();
 // CONSTANTS
 // ============================================================
 const TILE = 32;
-const WORLD_W = 220;
+const WORLD_W = 1000;
 const WORLD_H = 64;
 const MAX_SAVE_SLOTS = 5;
 
@@ -456,16 +464,52 @@ let mouseRight = false;
 
 function finishMining(tx, ty) {
   let blockID = world[ty][tx];
-  
-  // 1 or 2 = Stone/Dirt, 4 = Wood/Trees (Adjust to match your tile IDs)
-  if (blockID === 1 || blockID === 2) {
-    addToInventory('stone', 1);
-  } else if (blockID === 4) {
+  if (blockID === 0 || blockID === undefined) return;
+
+  // --- 1. HANDLE LOOT BASED ON TILE ID ---
+  if (blockID === 1 || blockID === 2) { 
+    // DIRT or GRASS
+    addToInventory('stone', 1); 
+  } 
+  else if (blockID === 4) { 
+    // NATURAL STONE
+    addToInventory('stone', 2);
+  } 
+  else if (blockID === 3) { 
+    // TREES
+    addToInventory('wood', 2);
+  }
+  else if (blockID === 8) { 
+    // GRAVE STONE
+    const boneCount = 1 + Math.floor(Math.random() * 3);
+    addToInventory('bone', boneCount);
+    
+    // 20% Chance for a zombie surprise
+    if (Math.random() < 0.20 && typeof spawnZombieAt === 'function') {
+        spawnZombieAt(tx * TILE, (ty - 1) * TILE);
+        if (typeof screenShake !== 'undefined') screenShake = 15;
+        if (typeof spawnDamageText === 'function') {
+            spawnDamageText(tx * TILE + 16, ty * TILE, "RESTLESS!", "#ff0000");
+        }
+    }
+  }
+  else if (blockID === 7) {
+    // CURSED SOIL
+    // 50% chance for bone, otherwise stone
+    if (Math.random() < 0.5) addToInventory('bone', 1);
+    else addToInventory('stone', 1);
+  }
+  else if (blockID === 5) {
+    // PLACED WOOD
     addToInventory('wood', 1);
   }
+
+  // --- 2. WORLD & UI UPDATE ---
+  world[ty][tx] = 0;   // Force the block to disappear
   
-  world[ty][tx] = 0; // Remove block from world
-  buildInventoryUI(); // Refresh UI
+  if (typeof buildInventoryUI === 'function') {
+    buildInventoryUI();
+  }
 }
 
 // ============================================================
@@ -533,6 +577,33 @@ function spawnDamageText(x, y, amount, color = "#ff4d4d") {
         vx: (Math.random() - 0.5) * 60,
         vy: -80
     });
+}
+
+function spawnZombieAt(px, py) {
+  // Create a new zombie object based on your game's zombie structure
+  const newZombie = {
+    x: px,
+    y: py,
+    w: 24,
+    h: 34,
+    vx: 0,
+    vy: 0,
+    health: 150 + (waveNum * 5), // Scale health with waves
+    speed: 80,
+    damage: 8,
+    isGraveZombie: true,
+    attackTimer: 0,
+    attackCooldown: 1.0,
+    stunTimer: 0.5, // Start slightly stunned so it doesn't insta-hit the player
+    onGround: false
+  };
+
+  zombies.push(newZombie);
+  
+  // Optional: Add some particles so it looks like they are digging out of the dirt
+  if (typeof spawnMineParticles === 'function') {
+      spawnMineParticles(px, py, 7); // Use ID 7 (Cursed Soil) particles
+  }
 }
 
 function createZombie(x, y, opts) {
@@ -1205,11 +1276,37 @@ function spawnMineParticles(x, y, tileType) {
 }
 
 function updateParticles(dt) {
-  for (let i = particles.length-1; i >= 0; i--) {
+  // --- NEW: Spawn high-quality drifting mist in graveyard ---
+  const camCenterX = Math.floor((camera.x + canvas.width / 2) / TILE);
+  if (typeof getBiomeAt === 'function' && getBiomeAt(camCenterX) === 'graveyard') {
+    if (Math.random() < 0.2) { // Slightly more frequent for density
+      particles.push({
+        x: camera.x + canvas.width + 100, // Spawn further out for smoother entry
+        y: camera.y + Math.random() * canvas.height,
+        vx: -30 - Math.random() * 40, // Slower, heavier drift
+        vy: Math.sin(performance.now() / 1000) * 8, // Wavy "floating" motion
+        life: 5.0,
+        maxLife: 5.0,
+        color: 'rgba(200, 200, 230, 0.1)', // Pale ghostly blue
+        size: 120 + Math.random() * 100, // Much larger for better coverage
+        isFog: true 
+      });
+    }
+  }
+
+  // --- EXISTING LOGIC ---
+  for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    p.vy += 400 * dt;
+    
+    // Mist doesn't fall, but we update its vertical wave
+    if (p.isFog) {
+        p.vy = Math.sin((performance.now() + p.x) / 1000) * 5;
+    } else {
+        p.vy += 400 * dt; // Gravity for debris
+    }
+    
     p.life -= dt;
     if (p.life <= 0) particles.splice(i, 1);
   }
@@ -1218,9 +1315,26 @@ function updateParticles(dt) {
 function drawParticles() {
   for (const p of particles) {
     const alpha = p.life / p.maxLife;
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = p.color;
-    ctx.fillRect(p.x - camera.x - p.size/2, p.y - camera.y - p.size/2, p.size, p.size);
+    
+    if (p.isFog) {
+      // Soft Radial Gradient for "Real" Fog
+      const grad = ctx.createRadialGradient(
+        p.x - camera.x, p.y - camera.y, 0,
+        p.x - camera.x, p.y - camera.y, p.size / 2
+      );
+      grad.addColorStop(0, p.color.replace('0.1', (0.15 * alpha).toString()));
+      grad.addColorStop(1, 'rgba(200, 200, 230, 0)'); // Fades to nothing
+
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(p.x - camera.x, p.y - camera.y, p.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Standard debris
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - camera.x - p.size/2, p.y - camera.y - p.size/2, p.size, p.size);
+    }
   }
   ctx.globalAlpha = 1;
 }
@@ -1333,57 +1447,123 @@ slotOverlay.addEventListener('click', closeSlotPanel);
 // WORLD GENERATION
 // ============================================================
 function generateWorld() {
-  world = []; drops = []; zombies = []; arrows = []; particles = [];
+  // Reset all game arrays
+  world = []; 
+  drops = []; 
+  zombies = []; 
+  arrows = []; 
+  particles = [];
+  
   const baseGround = Math.floor(WORLD_H * 0.58);
   const surfaceY = [];
+
+  // --- 1. RANDOMIZED BIOME MAP ---
+  const numChunks = Math.ceil(WORLD_W / CHUNK_SIZE);
+  const biomeTypes = ['forest', 'forest', 'graveyard', 'plains']; // Forest is twice as likely
+
+  for (let i = 0; i < numChunks; i++) {
+    // Pick a random biome for this chunk
+    const type = biomeTypes[Math.floor(Math.random() * biomeTypes.length)];
+    biomeMap.push(type);
+  }
+
+  // --- 2. GENERATE THE TERRAIN HEIGHT ---
   for (let x = 0; x < WORLD_W; x++) {
-    if (x === 0) surfaceY[x] = baseGround;
-    else {
-      surfaceY[x] = surfaceY[x-1];
-      if (Math.random() < 0.09) surfaceY[x] += Math.random() < 0.5 ? -1 : 1;
-      surfaceY[x] = Math.max(baseGround-6, Math.min(baseGround+6, surfaceY[x]));
+    if (x === 0) {
+      surfaceY[x] = baseGround;
+    } else {
+      surfaceY[x] = surfaceY[x - 1];
+      if (Math.random() < 0.09) {
+        surfaceY[x] += Math.random() < 0.5 ? -1 : 1;
+      }
+      surfaceY[x] = Math.max(baseGround - 6, Math.min(baseGround + 6, surfaceY[x]));
     }
   }
+
+  // --- 3. FILL THE WORLD WITH TILES ---
   for (let y = 0; y < WORLD_H; y++) {
     world[y] = [];
     for (let x = 0; x < WORLD_W; x++) {
       const s = surfaceY[x];
-      if (y < s) world[y][x] = 0;
-      else if (y === s) world[y][x] = 2;
-      else if (y <= s+5) world[y][x] = 1;
-      else if (y > s+14) world[y][x] = 4;
-      else world[y][x] = 1;
+      const biome = getBiomeAt(x);
+      
+      if (y < s) {
+        world[y][x] = 0; // Air
+      } else if (y === s) {
+        // SURFACE logic based on randomized biome
+        if (biome === 'graveyard') {
+          world[y][x] = 7; // Cursed Soil
+        } else {
+          world[y][x] = 2; // Grass
+        }
+      } else if (y <= s + 5) {
+        world[y][x] = 1; // Dirt
+      } else {
+        world[y][x] = 4; // Stone
+      }
     }
   }
-  // Caves
-  for (let i = 0; i < 45; i++) {
-    const cx = 10 + Math.floor(Math.random()*(WORLD_W-20));
-    const cy = baseGround + 10 + Math.floor(Math.random()*22);
-    const r = 2.5 + Math.random()*5;
-    for (let y=cy-r|0; y<=cy+r; y++) for (let x=cx-r|0; x<=cx+r; x++) {
-      if (x<0||x>=WORLD_W||y<0||y>=WORLD_H) continue;
-      if (Math.hypot(x-cx,y-cy)<r && (world[y][x]===1||world[y][x]===4)) world[y][x]=0;
+
+  // --- 4. CAVE GENERATION ---
+  // Scale caves with world width (approx 1 cave per 50 tiles)
+  const caveCount = Math.floor(WORLD_W / 5); 
+  for (let i = 0; i < caveCount; i++) {
+    const cx = Math.floor(Math.random() * WORLD_W);
+    const cy = baseGround + 10 + Math.floor(Math.random() * 22);
+    const r = 2.5 + Math.random() * 5;
+    for (let y = Math.floor(cy - r); y <= cy + r; y++) {
+      for (let x = Math.floor(cx - r); x <= cx + r; x++) {
+        if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H) continue;
+        if (Math.hypot(x - cx, y - cy) < r && (world[y][x] === 1 || world[y][x] === 4)) {
+          world[y][x] = 0;
+        }
+      }
     }
   }
-  // Trees — place wood resource nodes near trees
-  for (let x = 10; x < WORLD_W-10; x += 7) {
-    if (Math.random() < 0.35) {
-      const sy = surfaceY[x];
-      const h = 3 + Math.floor(Math.random()*3);
-      for (let i=1;i<=h;i++) if (sy-i>=0) world[sy-i][x] = 3;
+
+  // --- 5. VEGETATION & GRAVESTONES ---
+  for (let x = 5; x < WORLD_W - 5; x++) {
+    const sy = surfaceY[x];
+    const biome = getBiomeAt(x);
+
+    if (biome === 'graveyard') {
+      if (Math.random() < 0.25 && sy > 0 && world[sy - 1][x] === 0) {
+        world[sy - 1][x] = 8; // Grave
+      }
+    } else if (biome === 'forest') {
+      if (x % 7 === 0 && Math.random() < 0.35) {
+        const h = 3 + Math.floor(Math.random() * 3);
+        for (let i = 1; i <= h; i++) {
+          if (sy - i >= 0) world[sy - i][x] = 3;
+        }
+      }
     }
   }
-  // Ground loot
+
+  // --- 6. GROUND LOOT ---
   for (let x = 0; x < WORLD_W; x++) {
     const sy = surfaceY[x];
-    if (sy > 0 && world[sy-1] && world[sy-1][x] === 0) {
-      if (Math.random() < 0.12) drops.push({ x: x*TILE+8+Math.random()*8, y: (sy-1)*TILE+6, vy:0, vx:0, type:'bone' });
-      if (Math.random() < 0.08) drops.push({ x: x*TILE+8+Math.random()*8, y: (sy-1)*TILE+6, vy:0, vx:0, type:'cloth' });
-      // Stone and wood also appear as natural surface drops
-      if (Math.random() < 0.05) drops.push({ x: x*TILE+8+Math.random()*8, y: (sy-1)*TILE+6, vy:0, vx:0, type:'stone' });
-      if (Math.random() < 0.06) drops.push({ x: x*TILE+8+Math.random()*8, y: (sy-1)*TILE+6, vy:0, vx:0, type:'wood' });
+    const biome = getBiomeAt(x);
+    
+    if (sy > 0 && world[sy - 1] && world[sy - 1][x] === 0) {
+      // Higher chance for bones in Graveyards
+      const boneChance = (biome === 'graveyard') ? 0.30 : 0.08;
+      
+      if (Math.random() < boneChance) {
+        drops.push({ x: x * TILE + 8, y: (sy - 1) * TILE + 6, vy: 0, vx: 0, type: 'bone' });
+      }
+      if (Math.random() < 0.05) {
+        drops.push({ x: x * TILE + 8, y: (sy - 1) * TILE + 6, vy: 0, vx: 0, type: 'cloth' });
+      }
+      // Only forest gets random wood on the ground
+      if (biome === 'forest' && Math.random() < 0.06) {
+        drops.push({ x: x * TILE + 8, y: (sy - 1) * TILE + 6, vy: 0, vx: 0, type: 'wood' });
+      }
     }
   }
+
+  console.log("World Biome Map:", biomeMap);
+
   world._surface = surfaceY;
 }
 
@@ -1391,10 +1571,16 @@ function generateWorld() {
 // COLLISION
 // ============================================================
 function solid(x, y) {
-  if (y < 0 || y >= WORLD_H || x < 0 || x >= WORLD_W) return false;
+  // 1. Bounds check: If coordinates are outside the world array
+  // We return true for the sides and bottom to stop the player from falling into the void.
+  if (y < 0) return false; // Let the player jump above the map
+  if (y >= WORLD_H || x < 0 || x >= WORLD_W) return true; 
+
   const t = world[y][x];
-  // Now includes 5 (Wood) as a solid block
-  return t === 1 || t === 2 || t === 4 || t === 5; 
+
+  // 2. Collision Check:
+  // We include 1 (Dirt), 2 (Grass), 4 (Stone), 5 (Wood), and 7 (Cursed Soil)
+  return t === 1 || t === 2 || t === 4 || t === 5 || t === 7; 
 }
 
 // ============================================================
@@ -1409,12 +1595,16 @@ function getMineTarget() {
   const py = player.y + player.h/2;
   const dist = Math.hypot(wx - px, wy - py);
   
+  // Distance check
   if (dist > MINE_RANGE) return null;
-  if (tx<0||ty<0||tx>=WORLD_W||ty>=WORLD_H) return null;
+  // Bounds check
+  if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) return null;
   
   const t = world[ty]?.[tx];
-  // ADDED: t !== 5 so you can target placed wood
-  if (t !== 1 && t !== 2 && t !== 3 && t !== 4 && t !== 5) return null;
+
+  // UPDATED: Instead of listing every ID, we just check if it's NOT air (0)
+  // This ensures IDs 7, 8, and any future blocks you add will be mineable!
+  if (!t || t === 0) return null;
   
   return { tx, ty, tileType: t };
 }
@@ -1440,8 +1630,16 @@ function updateMining(dt) {
     mining.tx = target.tx;
     mining.ty = target.ty;
     mining.progress = 0;
-    // Trees and Wood blocks use tree speed, others use stone speed
-    mining.maxTime = (target.tileType === 3 || target.tileType === 5) ? MINE_TIME_TREE : MINE_TIME_STONE;
+    
+    // Set mining speed based on block type
+    const t = target.tileType;
+    if (t === 3 || t === 5) {
+      mining.maxTime = MINE_TIME_TREE;
+    } else if (t === 4 || t === 8) {
+      mining.maxTime = MINE_TIME_STONE;
+    } else {
+      mining.maxTime = 0.4; // Faster for dirt, grass, and cursed soil
+    }
   }
 
   mining.progress += dt;
@@ -1455,39 +1653,51 @@ function updateMining(dt) {
   miningBarEl.style.display = 'block';
 
   if (mining.progress >= mining.maxTime) {
-    // Break the block
     const t = world[target.ty][target.tx];
-    world[target.ty][target.tx] = 0;
+    world[target.ty][target.tx] = 0; // Remove the block!
     mining.active = false;
     miningBarEl.style.display = 'none';
 
     const bwx = target.tx * TILE + TILE/2;
     const bwy = target.ty * TILE + TILE/2;
+    let itemName = "dirt";
 
     // --- DROP LOGIC ---
     if (t === 3 || t === 5) {
-      // Tree (3) or Placed Wood (5) → wood
+      itemName = "wood";
       drops.push({ x: bwx - 8, y: bwy - 8, vy: -120 - Math.random()*60, vx: (Math.random()-0.5)*100, type: 'wood' });
-      // Only Trees get the 50% chance for a second wood piece
-      if (t === 3 && Math.random() < 0.5) {
-        drops.push({ x: bwx + 4, y: bwy - 4, vy: -80, vx: (Math.random()-0.5)*80, type: 'wood' });
-      }
-    } else if (t === 4) {
-      // Stone block → stone
+      if (t === 3 && Math.random() < 0.5) drops.push({ x: bwx + 4, y: bwy - 4, vy: -80, vx: (Math.random()-0.5)*80, type: 'wood' });
+    } 
+    else if (t === 4) {
+      itemName = "stone";
       drops.push({ x: bwx - 8, y: bwy - 8, vy: -80 - Math.random()*40, vx: (Math.random()-0.5)*80, type: 'stone' });
-      if (Math.random() < 0.4) drops.push({ x: bwx + 4, y: bwy - 4, vy: -60, vx: (Math.random()-0.5)*60, type: 'stone' });
-    } else if (t === 1 || t === 2) {
-      // Dirt (1) or Grass (2) → dirt
+    } 
+    else if (t === 1 || t === 2) {
+      itemName = "dirt";
       drops.push({ x: bwx - 8, y: bwy - 8, vy: -100, vx: (Math.random()-0.5)*60, type: 'dirt' });
+    } 
+    else if (t === 7) {
+      itemName = "cursed soil";
+      // Chance for bone or dirt
+      const type = Math.random() < 0.4 ? 'bone' : 'dirt';
+      drops.push({ x: bwx - 8, y: bwy - 8, vy: -110, vx: (Math.random()-0.5)*70, type: type });
+    } 
+    else if (t === 8) {
+      itemName = "bones";
+      const count = 1 + Math.floor(Math.random() * 2);
+      for(let i=0; i<count; i++) {
+        drops.push({ x: bwx, y: bwy, vy: -150 - Math.random()*50, vx: (Math.random()-0.5)*150, type: 'bone' });
+      }
+      
+      // The Zombie Surprise
+      if (Math.random() < 0.25) {
+        spawnZombieAt(target.tx * TILE, (target.ty - 1) * TILE);
+        screenShake = 15;
+        spawnDamageText(bwx, bwy - 20, "RESTLESS!", "#ff0000");
+      }
     }
 
     spawnMineParticles(target.tx * TILE, target.ty * TILE, t);
-    
-    // Determine the name for the message
-    let itemName = "dirt";
-    if (t === 3 || t === 5) itemName = "wood";
-    if (t === 4) itemName = "stone";
-    
     showMessage('Mined ' + itemName);
   }
 }
@@ -1566,13 +1776,39 @@ function update(dt) {
     showWaveAnnounce('WAVE ' + waveNum + ' CLEARED!');
   }
 
-  // ---------- 3. PLAYER MOVEMENT & FACING ----------
+// ---------- 3. PLAYER MOVEMENT & FACING ----------
   if (gameState === STATE.PLAYING) {
+    // 1. IMPROVED DETECTION: Check 3 points at the feet (left, center, right)
+    // This prevents the "speed" from flickering if you are on the edge of a block.
+    const footY = Math.floor((player.y + player.h + 2) / TILE); // +2px to look slightly below feet
+    const footXMid = Math.floor((player.x + player.w / 2) / TILE);
+    
+    const standingTile = (world[footY] && world[footY][footXMid]);
+
+    // DEBUG: Uncomment the line below to see the Tile ID in your browser console (F12)
+    // console.log("Standing on Tile ID:", standingTile);
+
+    // 2. Set the Speed
+    let currentMaxSpeed = playerSpeed;
+    
+    if (standingTile === 7) {
+      currentMaxSpeed = playerSpeed * 0.3; // 70% slowdown for a very noticeable effect
+    }
+
     player.vx = 0;
-    if (input.left) { player.vx = -playerSpeed; lastFacing = -1; } 
-    if (input.right) { player.vx = playerSpeed; lastFacing = 1; }
+    if (input.left) { 
+        player.vx = -currentMaxSpeed; 
+        lastFacing = -1; 
+    } 
+    if (input.right) { 
+        player.vx = currentMaxSpeed; 
+        lastFacing = 1; 
+    }
+
     if (input.jump && player.onGround && !noclip) { 
-        player.vy = -playerJump; 
+        // Also slow down jump velocity if on cursed soil
+        const currentJump = (standingTile === 7) ? playerJump * 0.8 : playerJump;
+        player.vy = -currentJump; 
         input.jump = false; 
     }
   }
@@ -1654,15 +1890,16 @@ function update(dt) {
           a.y += moveY / distance;
           const tx = Math.floor(a.x / TILE);
           const ty = Math.floor(a.y / TILE);
-          if (world[ty] && [1, 2, 4, 5].includes(world[ty][tx])) { hit = true; break; }
+          // CHANGE 1: Added ID 7 and 8 to the hit list
+          if (world[ty] && [1, 2, 4, 5, 7, 8].includes(world[ty][tx])) { hit = true; break; }
           for (let j = zombies.length - 1; j >= 0; j--) {
               const z = zombies[j];
               if (a.x > z.x && a.x < z.x + z.w && a.y > z.y && a.y < z.y + z.h) {
                   z.health -= a.damage;
                   spawnDamageText(a.x, a.y, Math.round(a.damage), "#ffaa00"); 
                   screenShake = 3; 
-                  z.stunTimer = 0.2; // Small arrow stun
-                  z.vx += (a.vx * 0.2); // Arrow knockback
+                  z.stunTimer = 0.2; 
+                  z.vx += (a.vx * 0.2); 
                   hit = true;
                   spawnHitParticles(a.x, a.y, a.color || '#ff6600');
                   break;
@@ -1677,7 +1914,6 @@ function update(dt) {
   for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
     
-    // Death & Bone Drop (No "Killed" text)
     if (z.health <= 0) {
         let type = Math.random() > 0.95 ? 'glowing_bone' : 'bone';
         drops.push({ x: z.x + 4, y: z.y, vy: -150, vx: (Math.random() - 0.5) * 100, type: type });
@@ -1686,22 +1922,27 @@ function update(dt) {
         continue;
     }
 
-    // Physics Update
     z.vy += 1600 * dt; 
 
     if (z.stunTimer > 0) {
-        // While stunned, AI is disabled so knockback works!
         z.stunTimer -= dt;
-        z.vx *= 0.95; // Ground friction
+        z.vx *= 0.95; 
     } else {
-        // AI Movement (only if not stunned)
         const gridX = Math.floor((z.x + z.w / 2) / TILE);
         const gridY = Math.floor((z.y + z.h - 1) / TILE);
         const currentTile = (world[gridY] && world[gridY][gridX]);
         
-        if (currentTile === 6) { z.health -= 20 * dt; z.speed = 40; } 
-        else if (currentTile === 7) { z.health -= 60 * dt; z.speed = 30; } 
-        else { z.speed = 80; }
+        // CHANGE 2: Cursed soil (7) no longer hurts zombies, only slows them
+        if (currentTile === 6) { 
+            z.health -= 20 * dt; 
+            z.speed = 40; 
+        } 
+        else if (currentTile === 7) { 
+            z.speed = 40; // Just slow down, no damage!
+        } 
+        else { 
+            z.speed = 80; 
+        }
 
         const dir = (player.x + player.w / 2) - (z.x + z.w / 2);
         z.vx = Math.abs(dir) > 4 ? Math.sign(dir) * z.speed : 0;
@@ -1710,7 +1951,6 @@ function update(dt) {
     z.x += z.vx * dt;
     z.y += z.vy * dt;
 
-    // Collision & Auto-Jump
     const zl = Math.floor(z.x / TILE), zr = Math.floor((z.x + z.w - 1) / TILE), zt = Math.floor(z.y / TILE);
     if (z.vx > 0 && solid(zr, zt)) { z.x = zr * TILE - z.w; if (z.onGround) z.vy = -450; }
     if (z.vx < 0 && solid(zl, zt)) { z.x = (zl + 1) * TILE; if (z.onGround) z.vy = -450; }
@@ -1719,7 +1959,6 @@ function update(dt) {
     const zb2 = Math.floor((z.y + z.h - 1) / TILE), zl2 = Math.floor(z.x / TILE);
     if (solid(zl2, zb2)) { z.y = zb2 * TILE - z.h; z.vy = 0; z.onGround = true; }
 
-    // Damage player
     if (z.x < player.x + player.w && z.x + z.w > player.x && z.y < player.y + player.h && z.y + z.h > player.y) {
       z.attackTimer -= dt;
       if (z.attackTimer <= 0 && !godmode && player.invincibleTimer <= 0) {
@@ -2067,6 +2306,29 @@ function draw() {
     }
   }
 
+  // ---------- GRAVEYARD FOG OVERLAY ----------
+  // Check biome at camera center
+  const camCenterX = Math.floor((camera.x + canvas.width / 2) / TILE);
+  if (typeof getBiomeAt === 'function' && getBiomeAt(camCenterX) === 'graveyard') {
+    ctx.save();
+    // 1. Subtle Purple/Gray Tint
+    ctx.globalAlpha = 0.25; 
+    ctx.fillStyle = "#2a2a3a"; 
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 2. Darker Vignette (Makes corners spooky)
+    const vignette = ctx.createRadialGradient(
+      canvas.width/2, canvas.height/2, canvas.width*0.2, 
+      canvas.width/2, canvas.height/2, canvas.width*0.8
+    );
+    vignette.addColorStop(0, "rgba(0,0,0,0)");
+    vignette.addColorStop(1, "rgba(10, 0, 30, 0.5)");
+    ctx.fillStyle = vignette;
+    ctx.globalAlpha = 1.0;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
   // 2. DRAW FLOATING DAMAGE TEXT
   // We draw this near the end so it's always visible on top
   damageTexts.forEach(t => {
@@ -2189,87 +2451,92 @@ function drawWeapon(ctx) {
 }
 
 function drawHUD() {
-  // Health bar
+  // 1. HEALTH BAR
   const hpRatio = Math.max(0, player.health / player.maxHealth);
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   roundRect(ctx, 12, 12, 180, 38, 6);
   ctx.fill();
+  
   const hpColor = hpRatio > 0.6 ? '#2ecc40' : hpRatio > 0.3 ? '#ffaa00' : '#e74c3c';
   ctx.fillStyle = hpColor;
-  const hpW = Math.max(0, hpRatio*176);
+  const hpW = Math.max(0, hpRatio * 176);
   if (hpW > 0) {
     ctx.save();
     ctx.beginPath();
     roundRect(ctx, 14, 14, hpW, 34, 4);
-    ctx.fillStyle = hpColor;
     ctx.fill();
-    // Health bar shine
+    // Shine effect
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
     ctx.fillRect(14, 14, hpW, 12);
     ctx.restore();
   }
-  ctx.fillStyle='#fff'; ctx.font='bold 13px monospace';
-  ctx.fillText('HP: '+Math.ceil(player.health)+'/'+player.maxHealth, 20, 36);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 13px monospace';
+  ctx.fillText('HP: ' + Math.ceil(player.health) + '/' + player.maxHealth, 20, 36);
 
-  // Day/night bar
+  // 2. DAY/NIGHT BAR (The Clock)
   const f = getDayFraction();
   const barW = 220, barH = 16;
-  const bx = canvas.width/2 - barW/2, by = 14;
-  ctx.fillStyle = 'rgba(0,0,0,0.6)';
-  roundRect(ctx, bx-2, by-2, barW+4, barH+4+20, 6);
+  const bx = canvas.width / 2 - barW / 2, by = 14;
+  
+  // Make the background pulse red if Night is approaching (f > 0.4)
+  const isApproachingNight = f > 0.4 && f < NIGHT_START;
+  const clockBg = isApproachingNight && Math.floor(Date.now() / 500) % 2 === 0 
+                  ? 'rgba(100,0,0,0.8)' 
+                  : 'rgba(0,0,0,0.6)';
+                  
+  ctx.fillStyle = clockBg;
+  roundRect(ctx, bx - 2, by - 2, barW + 4, barH + 4 + 20, 6);
   ctx.fill();
 
-  const barGrad = ctx.createLinearGradient(bx,0,bx+barW,0);
-  barGrad.addColorStop(0,'#87CEEB');
-  barGrad.addColorStop(NIGHT_START,'#e07030');
-  barGrad.addColorStop(NIGHT_START+0.05,'#0d0d1a');
-  barGrad.addColorStop(DAWN_START,'#1a0a30');
-  barGrad.addColorStop(1,'#87CEEB');
-  ctx.fillStyle = barGrad; ctx.fillRect(bx,by,barW,barH);
-  // Cursor
+  const barGrad = ctx.createLinearGradient(bx, 0, bx + barW, 0);
+  barGrad.addColorStop(0, '#87CEEB'); // Day
+  barGrad.addColorStop(NIGHT_START, '#e07030'); // Sunset
+  barGrad.addColorStop(NIGHT_START + 0.05, '#0d0d1a'); // Night
+  barGrad.addColorStop(DAWN_START, '#1a0a30'); // Dawn
+  barGrad.addColorStop(1, '#87CEEB');
+  
+  ctx.fillStyle = barGrad; ctx.fillRect(bx, by, barW, barH);
+  
+  // Clock Cursor
   ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.fillRect(bx+f*barW-1.5, by-3, 3, barH+6);
+  ctx.fillRect(bx + f * barW - 1.5, by - 3, 3, barH + 6);
+  
   // Labels
-  ctx.fillStyle='#fff'; ctx.font='11px monospace';
-  ctx.textAlign='center';
-  ctx.fillText(isNight() ? '🌙 Night — Wave '+waveNum : '☀ Day '+(dayCount+1), canvas.width/2, by+barH+14);
-  ctx.textAlign='left';
+  ctx.fillStyle = '#fff'; ctx.font = '11px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(isNight() ? '🌙 Night — Wave ' + waveNum : '☀ Day ' + (dayCount + 1), canvas.width / 2, by + barH + 14);
+  ctx.textAlign = 'left';
 
-  // Zombie counter (night)
+  // 3. ZOMBIE COUNTER
   if (isNight() && zombies.length > 0) {
     ctx.fillStyle = 'rgba(180,20,20,0.85)';
     roundRect(ctx, 12, 58, 180, 28, 5);
     ctx.fill();
-    ctx.fillStyle='#fff'; ctx.font='bold 13px monospace';
-    ctx.fillText('Zombies: '+zombies.length, 20, 77);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px monospace';
+    ctx.fillText('Zombies: ' + zombies.length, 20, 77);
   } else if (isNight() && zombies.length === 0 && waveComplete) {
     ctx.fillStyle = 'rgba(20,120,50,0.85)';
     roundRect(ctx, 12, 58, 180, 28, 5);
     ctx.fill();
-    ctx.fillStyle='#aaffbb'; ctx.font='bold 12px monospace';
+    ctx.fillStyle = '#aaffbb'; ctx.font = 'bold 12px monospace';
     ctx.fillText('Wave cleared!', 20, 77);
   }
 
-  // Kill count during night
-  if (isNight() && nightKillCount > 0) {
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.font = '11px monospace';
-    ctx.fillStyle = '#ff8866';
-    ctx.fillText('Killed: '+nightKillCount, 20, 96);
-  }
-
-  // Selected item label
+  // 4. SELECTED ITEM LABEL (Cleaned Up)
   const sel = hotbar[selected];
-  if (sel && sel.type) {
+  // Only draw if there's actually an item, otherwise it looks cluttered
+  if (sel && sel.type && sel.type !== null) {
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.font = '13px monospace';
-    const label = getItemName(sel.type) + (sel.count > 0 ? '  x'+sel.count : '');
+    const label = getItemName(sel.type) + (sel.count > 1 ? ' x' + sel.count : '');
     const lw = ctx.measureText(label).width + 16;
-    roundRect(ctx, canvas.width/2 - lw/2, canvas.height - 84, lw, 20, 5);
+    
+    roundRect(ctx, canvas.width / 2 - lw / 2, canvas.height - 84, lw, 20, 5);
     ctx.fill();
+    
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
-    ctx.fillText(label, canvas.width/2, canvas.height - 70);
+    ctx.fillText(label, canvas.width / 2, canvas.height - 70);
     ctx.textAlign = 'left';
   }
 }
@@ -2385,7 +2652,7 @@ function drawTile(t, sx, sy, size, now, tx, ty) {
     ctx.fillRect(sx, sy, size, 2);
   } 
   else if (t === 5) { 
-    // ID 5: PLACED WOOD (New ID for your buildings!)
+    // ID 5: PLACED WOOD
     ctx.fillStyle = '#8B4513';
     ctx.fillRect(sx, sy, size, size);
     ctx.strokeStyle = '#5D2E0C';
@@ -2396,12 +2663,11 @@ function drawTile(t, sx, sy, size, now, tx, ty) {
     ctx.lineTo(sx + size/2, sy + size - 2);
     ctx.stroke();
   }
-  // Add this inside your drawTile(t, sx, sy, size, now, tx, ty) function
   else if (t === 6) { 
-  // SPIKE TRAP
-    ctx.fillStyle = '#555'; // Grey base
+    // ID 6: SPIKE TRAP
+    ctx.fillStyle = '#555'; 
     ctx.fillRect(sx, sy + size - 8, size, 8);
-    ctx.fillStyle = '#bbb'; // Spike color
+    ctx.fillStyle = '#bbb'; 
     for (let i = 0; i < 3; i++) {
       ctx.beginPath();
       ctx.moveTo(sx + 5 + i * 12, sy + size - 8);
@@ -2410,26 +2676,33 @@ function drawTile(t, sx, sy, size, now, tx, ty) {
       ctx.fill();
     }
   }
-  // Add this inside your drawTile function after t === 6
   else if (t === 7) { 
-    // REINFORCED BONE SPIKES (ID 7)
-    ctx.fillStyle = '#4a3728'; // Darker leather/wood base
-    ctx.fillRect(sx, sy + size - 10, size, 10);
+    // ID 7: CURSED SOIL (Changed from Spikes)
+    ctx.fillStyle = '#3a2e24'; // Dark muddy brown
+    ctx.fillRect(sx, sy, size, size);
     
-    // Draw 4 sharper bone spikes
-    ctx.fillStyle = '#e0e0ce'; 
-    for (let i = 0; i < 4; i++) {
-        ctx.beginPath();
-        ctx.moveTo(sx + 2 + i * 8, sy + size - 10);
-        ctx.lineTo(sx + 6 + i * 8, sy - 4); // They stick up higher than the tile!
-        ctx.lineTo(sx + 10 + i * 8, sy + size - 10);
-        ctx.fill();
-    }
-    // Add a little cyan "glow" dot at the tips if you want them to look magical
-    ctx.fillStyle = '#4de6ff';
-    for (let i = 0; i < 4; i++) {
-        ctx.fillRect(sx + 5 + i * 8, sy - 6, 2, 2);
-    }
+    // Add small bone fragments or dark spots
+    ctx.fillStyle = '#2a1f18';
+    ctx.fillRect(sx + 4, sy + 10, 4, 2);
+    ctx.fillStyle = '#e0e0ce'; // Bone colored speck
+    ctx.fillRect(sx + 20, sy + 6, 2, 2);
+  }
+  else if (t === 8) { 
+    // ID 8: GRAVE STONE
+    // Draw dark soil base
+    ctx.fillStyle = '#3a2e24'; 
+    ctx.fillRect(sx, sy + size - 6, size, 6);
+
+    // Draw the Stone
+    ctx.fillStyle = '#7a7a7a';
+    ctx.beginPath();
+    // Using simple rect if roundRect isn't supported in your browser version
+    ctx.fillRect(sx + 8, sy + 4, 16, 28); 
+    
+    // Cross detail
+    ctx.fillStyle = '#444';
+    ctx.fillRect(sx + 15, sy + 12, 2, 10);
+    ctx.fillRect(sx + 12, sy + 15, 8, 2);
   }
 }
 
