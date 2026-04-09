@@ -26,6 +26,25 @@
     .menu{position:fixed;left:50%;top:6%;transform:translateX(-50%);width:800px;max-width:96%;background:rgba(8,8,12,0.97);color:#fff;padding:16px;border-radius:12px;display:none;pointer-events:auto;z-index:50;border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 32px rgba(0,0,0,0.8)}
     .menu .row{display:flex;gap:12px}
     .menu .panel{background:#161616;padding:12px;border-radius:8px;flex:1;border:1px solid rgba(255,255,255,0.06)}
+    /* Add this below your .menu .panel style */
+    #recipes {
+        max-height: 280px; /* This limits it to about 4 recipes high */
+        overflow-y: auto;  /* This adds the scrollbar when it gets too full */
+        padding-right: 8px; /* Gives the scrollbar some breathing room */
+    }
+
+    /* Optional: This makes the scrollbar look like a game (Gold & Dark) */
+    #recipes::-webkit-scrollbar {
+        width: 6px;
+    }
+    #recipes::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 3px;
+    }
+    #recipes::-webkit-scrollbar-thumb {
+        background: #ffd64d;
+        border-radius: 3px;
+    }
     .recipe{display:flex;justify-content:space-between;padding:9px 6px;border-bottom:1px solid rgba(255,255,255,0.05);align-items:center;border-radius:4px;transition:background 0.1s}
     .recipe:hover{background:rgba(255,255,255,0.04)}
     .recipe:last-child{border-bottom:none}
@@ -74,6 +93,16 @@
     #deathText{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);font-size:44px;font-weight:700;color:#ff3333;text-shadow:0 0 40px #f00;display:none;z-index:260;pointer-events:none;letter-spacing:4px;text-align:center}
     #miningBar{position:fixed;display:none;z-index:20;pointer-events:none;transform:translateX(-50%)}
     #miningBarFill{height:100%;background:#ffd64d;border-radius:3px;transition:width 0.05s linear}
+    .rare-glow {
+    filter: drop-shadow(0 0 5px #4de6ff) brightness(1.2);
+    }
+    .item-icon {
+    width: 32px !important;
+    height: 32px !important;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+    }
     </style>
     <canvas id="game"></canvas>
     <div id="miningBar" style="width:60px;height:6px;background:rgba(0,0,0,0.6);border-radius:3px;border:1px solid rgba(255,255,255,0.2)"><div id="miningBarFill" style="width:0%"></div></div>
@@ -167,18 +196,20 @@
       <div class="debug-section">
         <label>Give Item</label>
         <div class="debug-row">
-          <select id="debugItemType">
+            <select id="debugItemType">
             <option value="bone">Bone</option>
-            <option value="cloth">Cloth</option>
+            <option value="glowing_bone">Glowing Bone</option> <option value="cloth">Cloth</option>
             <option value="wood">Wood</option>
             <option value="stone">Stone</option>
             <option value="knife">Knife</option>
             <option value="sword">Sword</option>
-            <option value="bow">Bow</option>
-            <option value="arrow">Arrow</option>
+            <option value="bone_sword">Bone Greatsword</option> <option value="bow">Bow</option>
+            <option value="bone_bow">Bone Bow</option> <option value="arrow">Arrow</option>
             <option value="bandage">Bandage</option>
             <option value="food">Food</option>
-          </select>
+            <option value="spike_trap">Wood Spike Trap</option>
+            <option value="reinforced_spikes">Bone Spikes</option> 
+            </select>
           x<input type="number" id="debugItemCount" value="10" min="1" max="999" style="width:50px">
           <button class="debug-btn" id="debugSpawnBtn">Give</button>
         </div>
@@ -206,6 +237,103 @@
     </div>
   
 <script>
+
+// 1. Updated Art Studio with the full Bone Set
+// 1. The Art Studio (Corrected Syntax)
+const SpriteArt = {
+    drawBoneSword: (ctx, x, y, size) => {
+        const p = size / 8;
+        ctx.fillStyle = '#e0e0ce'; 
+        ctx.fillRect(x + 3*p, y + 0*p, 2*p, 5*p); 
+        ctx.fillRect(x + 2*p, y + 1*p, p, 2*p);   
+        ctx.fillRect(x + 5*p, y + 3*p, p, p);     
+        ctx.fillStyle = '#f0f0e0';
+        ctx.fillRect(x + 1*p, y + 5*p, 6*p, p);
+        ctx.fillStyle = '#4a3728';
+        ctx.fillRect(x + 3*p, y + 6*p, 2*p, 2*p);
+    },
+    
+    drawBoneBow: (ctx, x, y, size) => {
+        const p = size / 8;
+        ctx.fillStyle = '#e0e0ce'; // Rib-bone color
+        // Top curve (jagged rib)
+        ctx.fillRect(x+3*p, y+1*p, 3*p, p);
+        ctx.fillRect(x+6*p, y+1*p, p, 2*p);
+        // Bottom curve (jagged rib)
+        ctx.fillRect(x+3*p, y+6*p, 3*p, p);
+        ctx.fillRect(x+6*p, y+5*p, p, 2*p);
+        // Grip (Thicker bone center)
+        ctx.fillStyle = '#d0d0be';
+        ctx.fillRect(x+6*p, y+3*p, 2*p, 2*p);
+        // Bowstring (Ghostly thin line)
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.fillRect(x+3*p, y+1*p, p/2, 6*p);
+    },
+
+    drawGlowingBone: (ctx, x, y, size) => {
+        const p = size / 8;
+        // The outer ghostly glow
+        ctx.fillStyle = '#4de6ff'; 
+        // Classic Bone Ends (Top)
+        ctx.fillRect(x + 2*p, y + 1*p, 2*p, 2*p); 
+        ctx.fillRect(x + 4*p, y + 1*p, 2*p, 2*p); 
+        // Classic Bone Ends (Bottom)
+        ctx.fillRect(x + 2*p, y + 5*p, 2*p, 2*p); 
+        ctx.fillRect(x + 4*p, y + 5*p, 2*p, 2*p); 
+        // Slimmer Shaft
+        ctx.fillRect(x + 3*p, y + 2*p, 2*p, 4*p); 
+        
+        // Inner white "Soul" core
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x + 3.5*p, y + 2*p, p, 4*p);
+        ctx.fillRect(x + 3*p, y + 1.5*p, 2*p, p);
+        ctx.fillRect(x + 3*p, y + 5.5*p, 2*p, p);
+    },
+
+    drawBoneSpikes: (ctx, x, y, size) => {
+        const p = size / 8;
+        ctx.fillStyle = '#63442d'; // Dark wood base
+        ctx.fillRect(x, y+6*p, 8*p, 2*p);
+        ctx.fillStyle = '#e0e0ce'; // Sharp bone shards
+        ctx.fillRect(x+p, y+2*p, p, 4*p); // Spike 1
+        ctx.fillRect(x+3*p, y, p, 6*p);   // Main Spike
+        ctx.fillRect(x+5*p, y+2*p, p, 4*p); // Spike 2
+        // Added some "bindings" (rope/vines)
+        ctx.fillStyle = '#4a3728';
+        ctx.fillRect(x, y+5*p, 8*p, p);
+    }
+};
+
+// 2. The Generator (Fixed and Robust)
+const itemImages = {};
+
+function generateSprites() {
+    try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 32;
+        canvas.height = 32;
+
+        const itemsToDraw = [
+            { name: 'bone_sword', draw: SpriteArt.drawBoneSword },
+            { name: 'bone_bow', draw: SpriteArt.drawBoneBow },
+            { name: 'glowing_bone', draw: SpriteArt.drawGlowingBone },
+            { name: 'reinforced_spikes', draw: SpriteArt.drawBoneSpikes }
+        ];
+
+        itemsToDraw.forEach(item => {
+            ctx.clearRect(0, 0, 32, 32);
+            item.draw(ctx, 0, 0, 32);
+            itemImages[item.name] = canvas.toDataURL();
+        });
+        console.log("Sprites generated successfully!");
+    } catch (e) {
+        console.error("Sprite generation failed:", e);
+    }
+}
+
+generateSprites();
+
 (function() {
 
 // ============================================================
@@ -450,16 +578,41 @@ function showWaveAnnounce(text) {
 let hotbar = Array.from({length:10}, () => ({type:null, count:0}));
 let inventory = Array.from({length:20}, () => ({type:null, count:0}));
 let selected = 0;
+let unlockedRecipes = []; 
 
 const recipes = [
-  { id: 'bandage', name: 'Bandage', cost: { cloth: 2 }, result: 'bandage' },
-  { id: 'knife', name: 'Knife', cost: { wood: 2, stone: 1 }, result: 'knife' },
-  { id: 'sword', name: 'Sword', cost: { wood: 2, stone: 3 }, result: 'sword' },
-  { id: 'bow', name: 'Bow', cost: { wood: 5, cloth: 2 }, result: 'bow' },
-  { id: 'arrow', name: 'Arrow x5', cost: { wood: 1, stone: 1 }, result: 'arrow', count: 5 },
-  { id: 'spike_trap', name: 'Spike Trap', cost: { wood: 10, stone: 5 }, result: 'spike_trap' },
-  { id: 'food', name: 'Cooked Meat', cost: { bone: 2 }, result: 'food' }
+  // --- BASIC TIER ---
+  { id: 'bandage', name: 'Bandage', cost: { cloth: 2 }, result: 'bandage', desc: 'Heals a small amount of HP.' },
+  { id: 'knife', name: 'Knife', cost: { wood: 2, stone: 1 }, result: 'knife', desc: 'Quick but short range.' },
+  { id: 'sword', name: 'Sword', cost: { wood: 2, stone: 3 }, result: 'sword', desc: 'Reliable melee weapon.' },
+  { id: 'bow', name: 'Bow', cost: { wood: 5, cloth: 2 }, result: 'bow', desc: 'Basic ranged weapon.' },
+  { id: 'arrow', name: 'Arrow x5', cost: { wood: 1, stone: 1 }, result: 'arrow', count: 5, desc: 'Ammo for bows.' },
+  { id: 'spike_trap', name: 'Spike Trap', cost: { wood: 10, stone: 5 }, result: 'spike_trap', desc: 'Slows and hurts zombies.' },
+
+  // --- BONE TIER (LOCKED UNTIL DISCOVERED) ---
+  { 
+    id: 'bone_sword', 
+    name: 'Bone Greatsword', 
+    cost: { bone: 10, glowing_bone: 2 }, 
+    result: 'bone_sword', 
+    desc: 'Heavy knockback and high damage.' 
+  },
+  { 
+    id: 'bone_bow', 
+    name: 'Recurve Bone Bow', 
+    cost: { wood: 3, bone: 8, glowing_bone: 3 }, 
+    result: 'bone_bow', 
+    desc: 'Faster draw speed and piercing power.' 
+  },
+  { 
+    id: 'reinforced_spikes', 
+    name: 'Bone Spikes', 
+    cost: { stone: 5, bone: 15 }, 
+    result: 'reinforced_spikes', 
+    desc: 'Much more durable than wooden spikes.' 
+  }
 ];
+
 // ============================================================
 // DOM REFS
 // ============================================================
@@ -510,11 +663,22 @@ function showMessage(text, isError) {
 // ITEM DATA
 // ============================================================
 function getItemIcon(type) {
+  // 1. Check if we have a custom pixel art sprite
+  if (itemImages[type]) {
+    let extraClass = type.includes('glowing') ? 'rare-glow' : '';
+    
+    // CRITICAL: We wrap the 'long list of letters' (itemImages[type]) in an <img> tag
+    return `<img src="${itemImages[type]}" class="item-icon ${extraClass}" 
+             style="width:30px; height:30px; image-rendering:pixelated; vertical-align:middle;">`;
+  }
+
+  // 2. Fallback to your original emojis
   const m = { 
     wood:'🪵', stone:'🪨', dirt:'🟫', bone:'🦴', cloth:'🧶', 
     knife:'🔪', sword:'⚔️', bow:'🏹', arrow:'↑', bandage:'🩹', 
     food:'🍗', spike_trap:'🪤' 
   };
+
   return m[type] || '?';
 }
 
@@ -556,11 +720,11 @@ function getWeaponDamage(type) {
   const m = { 
     knife: 20, 
     sword: 40,
-    wood: 5,   // Even building materials do a little damage if you bonk someone
-    stone: 8,
-    dirt: 2
+    bone_sword: 85, // Massive damage upgrade
+    bow: 25,
+    bone_bow: 55,   // Heavy-hitting bow
+    wood: 5, stone: 8, dirt: 2
   };
-  // Default damage (fists) is 12
   return m[type] || 12;
 }
 
@@ -568,11 +732,11 @@ function getWeaponRange(type) {
   const m = { 
     knife: TILE * 2.5, 
     sword: TILE * 3,
-    wood: TILE * 2.2,
-    stone: TILE * 2.2,
-    dirt: TILE * 2.0
+    bone_sword: TILE * 4.5, // Much longer reach
+    bow: TILE * 10,
+    bone_bow: TILE * 15,    // Farther range
+    wood: TILE * 2.2, stone: TILE * 2.2, dirt: TILE * 2.0
   };
-  // Default range
   return m[type] || TILE * 2.2;
 }
 
@@ -613,7 +777,12 @@ function updateHotbarDOM() {
   for (let i = 0; i < slots.length; i++) {
     slots[i].className = 'slot' + (i === selected ? ' selected' : '');
     const icon = slots[i].querySelector('div:not(.slot-num):not(.count)');
-    if (icon) icon.textContent = getItemIcon(hotbar[i]?.type) || '';
+    
+    if (icon) {
+      // CHANGE THIS LINE from .textContent to .innerHTML
+      icon.innerHTML = getItemIcon(hotbar[i]?.type) || ''; 
+    }
+    
     const cnt = slots[i].querySelector('.count');
     if (cnt) cnt.textContent = hotbar[i]?.count > 0 ? hotbar[i].count : '';
   }
@@ -660,7 +829,7 @@ function buildInventoryUI() {
       el.addEventListener('drop', (e) => handleDrop(e, 'hotbar', i));
 
       if (d.type) {
-        el.innerHTML = '<span style="font-size:18px">' + getItemIcon(d.type) + '</span>' + (d.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:10px;font-weight:700">' + d.count + '</span>' : '');
+        el.innerHTML = getItemIcon(d.type) + (d.count > 1 ? '<span style="position:absolute;bottom:2px;right:4px;font-size:10px;font-weight:700">' + d.count + '</span>' : '');
         el.title = getItemName(d.type);
       }
       hg.appendChild(el);
@@ -687,26 +856,40 @@ function buildInventoryUI() {
 
 function buildRecipes() {
   recipesEl.innerHTML = '';
+  
   for (const r of recipes) {
+    // --- NEW: THE GATEKEEPER ---
+    // Check if the recipe is "locked"
+    // We assume bone items are locked until they appear in unlockedRecipes
+    const isBoneItem = r.result.includes('bone');
+    if (isBoneItem && !unlockedRecipes.includes(r.result)) {
+      // Option A: Skip drawing it entirely (Hidden)
+      continue; 
+    }
+
     const row = document.createElement('div');
     row.className = 'recipe';
     const left = document.createElement('div');
     left.innerHTML = '<b style="font-size:13px">' + r.name + '</b><div style="font-size:11px;color:#777;margin-top:1px">' + r.desc + '</div><div style="font-size:11px;color:#aaa;margin-top:3px">' +
       Object.entries(r.cost).map(([k,v]) => getItemIcon(k)+' '+v+' '+getItemName(k)).join(', ') + '</div>';
+    
     const canDo = canCraft(r);
     const btn = document.createElement('button');
     btn.className = 'btn btn-sm' + (canDo ? '' : ' disabled');
     btn.style.minWidth = '56px';
     btn.textContent = 'Craft';
+    
     if (canDo) {
       btn.addEventListener('click', () => {
         if (!canCraft(r)) { showMessage('Missing materials', true); return; }
         for (const [k,v] of Object.entries(r.cost)) removeFromInventory(k,v);
         addToInventory(r.result, r.count || 1);
         showMessage(r.name + ' crafted!');
-        buildInventoryUI(); buildRecipes();
+        buildInventoryUI(); 
+        buildRecipes(); // Refresh list after crafting
       });
     }
+    
     row.append(left, btn);
     recipesEl.appendChild(row);
   }
@@ -716,17 +899,84 @@ function buildRecipes() {
 // INVENTORY FUNCTIONS
 // ============================================================
 function addToInventory(type, amt) {
-  // Try to stack in hotbar first
-  for (const s of hotbar) { if (s.type === type) { s.count += amt; updateHotbarDOM(); return true; } }
-  // Try to stack in inventory
-  for (const s of inventory) { if (s.type === type) { s.count += amt; return true; } }
-  // Find empty slot in hotbar
-  for (let i=0; i<hotbar.length; i++) { if (!hotbar[i].type) { hotbar[i].type = type; hotbar[i].count = amt; updateHotbarDOM(); return true; } }
-  // Find empty slot in inventory
-  for (let i=0; i<inventory.length; i++) { if (!inventory[i].type) { inventory[i].type = type; inventory[i].count = amt; return true; } }
+  let added = false;
+
+  // 1. Try to stack in hotbar first
+  for (const s of hotbar) { 
+    if (s.type === type) { 
+      s.count += amt; 
+      updateHotbarDOM(); 
+      added = true; 
+      break; 
+    } 
+  }
+
+  // 2. Try to stack in inventory
+  if (!added) {
+    for (const s of inventory) { 
+      if (s.type === type) { 
+        s.count += amt; 
+        added = true; 
+        break; 
+      } 
+    }
+  }
+
+  // 3. Find empty slot in hotbar
+  if (!added) {
+    for (let i=0; i<hotbar.length; i++) { 
+      if (!hotbar[i].type) { 
+        hotbar[i].type = type; 
+        hotbar[i].count = amt; 
+        updateHotbarDOM(); 
+        added = true; 
+        break; 
+      } 
+    }
+  }
+
+  // 4. Find empty slot in inventory
+  if (!added) {
+    for (let i=0; i<inventory.length; i++) { 
+      if (!inventory[i].type) { 
+        inventory[i].type = type; 
+        inventory[i].count = amt; 
+        added = true; 
+        break; 
+      } 
+    }
+  }
+
+  // --- NEW: TRIGGER UNLOCKS ---
+  if (added) {
+    // If we successfully picked up a glowing bone, check for new recipes
+    if (type === 'glowing_bone') {
+      unlockNewRecipes('glowing_bone');
+    }
+    return true;
+  }
   
   showMessage("Inventory Full!", true);
   return false; 
+}
+
+// New function to handle the "Research" aspect of the game
+function unlockNewRecipes(materialType) {
+  // You'll need an array at the top of your script: let unlockedRecipes = [];
+  if (materialType === 'glowing_bone') {
+    // Check if we already unlocked these to avoid spamming messages
+    if (!unlockedRecipes.includes('bone_sword')) {
+      unlockedRecipes.push('bone_sword', 'bone_bow', 'reinforced_spikes');
+      
+      // Visual feedback for the player
+      showMessage("✨ DISCOVERY: The glowing marrow reveals new secrets...");
+      console.log("Unlocked: Bone Gear Tier");
+      
+      // If you have a function that draws your crafting menu, call it here 
+      // to make the new items appear immediately.
+      if (typeof buildInventoryUI === 'function') buildInventoryUI();
+    }
+  }
 }
 function removeFromInventory(type, amt) {
   let rem = amt;
@@ -786,14 +1036,28 @@ let arrows = [];
 
 function shootArrow(strength) {
   const item = hotbar[selected];
-  if (!item || item.type !== 'bow') return;
-  if (!has('arrow', 1)) { showMessage('No arrows!', true); return; }
+  
+  // FIX: Allow both types of bows to pass through this check
+  if (!item || (item.type !== 'bow' && item.type !== 'bone_bow')) return;
+  
+  if (!has('arrow', 1)) { 
+    showMessage('No arrows!', true); 
+    return; 
+  }
   
   removeFromInventory('arrow', 1);
 
-  // Power logic: strength will be between 0.1 and 1.0
-  // Base speed is 200, max is 800
-  const speed = 200 + (strength * 600);
+  // Stats Logic
+  let powerMult = 1.0;
+  let arrowColor = '#c8a040'; // Default wood color
+
+  // Apply Bone Bow Buffs
+  if (item.type === 'bone_bow') {
+    powerMult = 1.6;        // 60% more power
+    arrowColor = '#4de6ff';  // Cyan glowing arrow
+  }
+
+  const speed = (200 + (strength * 600)) * powerMult;
   const angle = Math.atan2(mouse.y + camera.y - (player.y + player.h/2), mouse.x + camera.x - (player.x + player.w/2));
   
   arrows.push({
@@ -801,8 +1065,9 @@ function shootArrow(strength) {
     y: player.y + player.h/2,
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
-    damage: 15 + (strength * 25), // More pull = more damage (15 to 40)
-    gravity: 500 - (strength * 300), // More pull = flatter flight
+    damage: (15 + (strength * 25)) * powerMult,
+    gravity: (500 - (strength * 300)) / powerMult, // Bone arrows fly straighter
+    color: arrowColor, // Pass the color to the arrow object
     life: 3.0
   });
 }
@@ -1136,12 +1401,18 @@ function update(dt) {
   // ---------- 1. TIMERS & ANIMATIONS ----------
   if (attackTimer > 0) attackTimer -= dt;
   
-  if (attackAnim > 0) {
-    // Bow draw is slower (1.0), Melee swing is faster (3.5)
-    const animSpeed = (player.currentWeaponType === 'bow') ? 2.5 : 3.5;
-    attackAnim -= dt * animSpeed;
-    if (attackAnim < 0) attackAnim = 0;
-  }
+    if (attackAnim > 0) {
+        let animSpeed = 2.5; // Default wood pull speed
+        
+        if (player.currentWeaponType === 'bone_bow') {
+            animSpeed = 6.0; // Bone bow pulls back OVER TWICE as fast
+        } else if (player.currentWeaponType !== 'bow') {
+            animSpeed = 3.5; // Melee swing speed
+        }
+        
+        attackAnim -= dt * animSpeed;
+        if (attackAnim < 0) attackAnim = 0;
+    }
 
   // Wave announce banner
   if (waveAnnounceTimer > 0) {
@@ -1276,18 +1547,18 @@ function update(dt) {
     }
   }
 
-// ---------- 7. ARROWS ----------
+    // ---------- 7. ARROWS ----------
     for (let i = arrows.length - 1; i >= 0; i--) {
         const a = arrows[i];
         a.life -= dt;
-        a.vy += 450 * dt; // Gravity
+        
+        // Use the arrow's custom gravity if it exists, otherwise default to 450
+        a.vy += (a.gravity || 450) * dt; 
 
-        // Calculate total distance to move this frame
         let moveX = a.vx * dt;
         let moveY = a.vy * dt;
         let distance = Math.hypot(moveX, moveY);
         
-        // Move 1 pixel at a time for perfect precision
         let hit = false;
         for (let d = 0; d < distance; d++) {
             a.x += moveX / distance;
@@ -1296,17 +1567,10 @@ function update(dt) {
             const tx = Math.floor(a.x / TILE);
             const ty = Math.floor(a.y / TILE);
 
-            // Check for solid world collision
-            if (world[ty] && world[ty][tx]) {
-                const tid = world[ty][tx];
-                // 1=Dirt, 2=Grass, 4=Stone, 5=Wood Wall
-                if (tid === 1 || tid === 2 || tid === 4 || tid === 5) {
-                    hit = true;
-                    // Back up exactly 1 pixel so it's not buried
-                    a.x -= moveX / distance;
-                    a.y -= moveY / distance;
-                    break;
-                }
+            // Check for solid world collision (IDs 1, 2, 4, 5)
+            if (world[ty] && [1, 2, 4, 5].includes(world[ty][tx])) {
+                hit = true;
+                break;
             }
 
             // Check for Zombie collision
@@ -1315,8 +1579,12 @@ function update(dt) {
                 if (a.x > z.x && a.x < z.x + z.w && a.y > z.y && a.y < z.y + z.h) {
                     z.health -= a.damage;
                     z.stunTimer = 0.2;
-                    z.vx += (a.vx * 0.2);
+                    // Add some knockback based on arrow velocity
+                    z.vx += (a.vx * 0.1); 
                     hit = true;
+                    
+                    // Spawn hit particles
+                    spawnHitParticles(a.x, a.y, a.color || '#ff6600');
                     break;
                 }
             }
@@ -1334,23 +1602,39 @@ function update(dt) {
     
     // Death & Bone Drop
     if (z.health <= 0) {
-      drops.push({ x: z.x + 4, y: z.y, vy: -80, vx: (Math.random() - 0.5) * 80, type: 'bone' });
-      zombies.splice(i, 1);
-      nightKillCount++;
-      continue;
+        // 70% chance for a normal bone, 30% for a "Glowing Bone"
+        let type = Math.random() > 0.95 ? 'glowing_bone' : 'bone';
+        drops.push({ 
+            x: z.x + 4, 
+            y: z.y, 
+            vy: -150, // Pop upwards
+            vx: (Math.random() - 0.5) * 100, 
+            type: type 
+        });
+        zombies.splice(i, 1);
+        nightKillCount++;
+        continue;
     }
 
     if (z.stunTimer > 0) { z.stunTimer -= dt; continue; }
 
-    // --- SPIKE TRAP LOGIC ---
-    // Check the tile the zombie is currently standing on
+    // --- IMPROVED SPIKE TRAP LOGIC ---
     const gridX = Math.floor((z.x + z.w / 2) / TILE);
     const gridY = Math.floor((z.y + z.h - 1) / TILE);
-    if (world[gridY] && world[gridY][gridX] === 6) {
-      z.health -= 20 * dt; // Deals 20 damage per second while standing on it
-      z.speed = 40;        // Slow them down significantly
-    } else {
-      z.speed = 80;        // Reset to normal speed (or whatever your default is)
+    const currentTile = (world[gridY] && world[gridY][gridX]);
+
+    if (currentTile === 6) {
+        // Wooden Spikes
+        z.health -= 20 * dt; 
+        z.speed = 40; 
+    } 
+    else if (currentTile === 7) {
+        // Bone Spikes (ID 7)
+        z.health -= 60 * dt; // 3x the damage of wooden spikes!
+        z.speed = 30;        // Even slower (getting stuck on bone shards)
+    } 
+    else {
+        z.speed = 80; // Normal speed
     }
 
     // Movement Logic
@@ -1427,45 +1711,47 @@ window.addEventListener('mousemove', e => {
 });
 
 window.addEventListener('mousedown', (e) => {
-  if (gameState !== STATE.PLAYING && gameState !== STATE.INVENTORY) return;
-  
-  // Update weapon type so logic knows we are using a bow
-  player.currentWeaponType = hotbar[selected]?.type || null;
+    if (gameState !== STATE.PLAYING) return;
 
-  if (e.button === 0) { 
-    mouse.down = true; 
-    
-    // BOW CHARGE TRIGGER: Start the animation at 1.0 (full) 
-    // It will then count down to 0 in your existing update(dt)
-    if (player.currentWeaponType === 'bow' && attackTimer <= 0) {
-      attackAnim = 1.0; 
-      player.isAttacking = true;
+    // LEFT CLICK (Attack/Build)
+    if (e.button === 0) {
+        const item = hotbar[selected];
+        player.currentWeaponType = item?.type || null;
+        mouse.down = true; 
+
+        const isBow = player.currentWeaponType === 'bow' || player.currentWeaponType === 'bone_bow';
+        if (isBow) { 
+            attackAnim = 1.0; 
+            player.isAttacking = true;
+        }
     }
-  } else if (e.button === 2) {
-    mouseRight = true;
-  }
+
+    // RIGHT CLICK (Mining)
+    if (e.button === 2) {
+        mouseRight = true;
+    }
 });
 
 window.addEventListener('mouseup', (e) => {
-  if (e.button === 0) { 
-    mouse.down = false; 
-    
-    // BOW RELEASE: This checks how much the animation decreased
-    if (player.currentWeaponType === 'bow' && attackTimer <= 0) {
-      // strength is how far away from 1.0 the animation got
-      const strength = Math.min(1.0, 1.0 - attackAnim);
-      if (strength > 0.1) shootArrow(strength); 
-      
-      attackTimer = 0.8; 
-      attackAnim = 0; 
+    if (e.button === 0) {
+        mouse.down = false; 
+        if (player.isAttacking) {
+            const isBow = player.currentWeaponType === 'bow' || player.currentWeaponType === 'bone_bow';
+            if (isBow) {
+                const strength = Math.min(1.0, 1.0 - attackAnim);
+                if (strength > 0.05) {
+                    shootArrow(strength);
+                    attackTimer = (player.currentWeaponType === 'bone_bow') ? 0.05 : 0.4; 
+                }
+            }
+        }
+        player.isAttacking = false;
+        attackAnim = 0; 
     }
-    
-    player.isAttacking = false;
-  } else if (e.button === 2) {
-    mouseRight = false;
-    mining.active = false;
-    if (typeof miningBarEl !== 'undefined') miningBarEl.style.display = 'none';
-  }
+
+    if (e.button === 2) {
+        mouseRight = false;
+    }
 });
 
 window.addEventListener('contextmenu', e => e.preventDefault());
@@ -1495,7 +1781,7 @@ function handleMouseActions(dt) {
   const dist = Math.hypot((tx * TILE + TILE/2) - px, (ty * TILE + TILE/2) - py);
 
   // 1. BUILDING LOGIC (Using item instead of selectedItem)
-  const isBuildingMaterial = ['wood', 'stone', 'dirt', 'spike_trap'].includes(type);
+  const isBuildingMaterial = ['wood', 'stone', 'dirt', 'spike_trap', 'reinforced_spikes'].includes(type);
   
   if (isBuildingMaterial && item.count > 0) {
     if (dist <= MINE_RANGE && world[ty] && world[ty][tx] === 0 && buildTimer <= 0) {
@@ -1503,6 +1789,7 @@ function handleMouseActions(dt) {
       else if (type === 'stone') world[ty][tx] = 4;
       else if (type === 'dirt') world[ty][tx] = 1;
       else if (type === 'spike_trap') world[ty][tx] = 6; 
+      else if (type === 'reinforced_spikes') world[ty][tx] = 7; // <--- ADD THIS LINE
 
       item.count--;
       if (item.count <= 0) { item.type = null; item.count = 0; }
@@ -1515,7 +1802,7 @@ function handleMouseActions(dt) {
   }
 
   // 2. MELEE ATTACK LOGIC
-  if (attackTimer <= 0 && type !== 'bow') {
+  if (attackTimer <= 0 && type !== 'bow' && type !== 'bone_bow') {
     attackTimer = ATTACK_COOLDOWN;
     attackAnim = 1;
 
@@ -1628,14 +1915,30 @@ function draw() {
   for (const d of drops) drawDrop(d.x-camera.x, d.y-camera.y, d.type);
 
   // Arrows
-  ctx.strokeStyle = '#c8a040'; ctx.lineWidth = 3;
   for (const a of arrows) {
     ctx.save();
-    ctx.translate(a.x-camera.x, a.y-camera.y);
+    ctx.translate(a.x - camera.x, a.y - camera.y);
     const ang = Math.atan2(a.vy, a.vx);
     ctx.rotate(ang);
-    ctx.beginPath(); ctx.moveTo(-10,0); ctx.lineTo(10,0);
+
+    // --- COLOR LOGIC ---
+    // Use the arrow's individual color (cyan for bone, orange for wood)
+    ctx.strokeStyle = a.color || '#c8a040'; 
+    ctx.lineWidth = 3;
+
+    // Optional: Add a neon glow effect specifically for Bone Arrows
+    if (a.color === '#4de6ff') {
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = '#4de6ff';
+    }
+
+    ctx.beginPath(); 
+    ctx.moveTo(-10, 0); 
+    ctx.lineTo(10, 0); 
     ctx.stroke();
+
+    // Reset shadow so it doesn't leak into other drawings
+    ctx.shadowBlur = 0; 
     ctx.restore();
   }
 
@@ -1689,72 +1992,101 @@ function drawWeapon(ctx) {
   const item = hotbar[selected];
   if (!item || !item.type) return;
 
-  const isMelee = ['knife', 'sword', 'wood', 'stone'].includes(item.type);
-  const isBow = (item.type === 'bow');
-  if (!isMelee && !isBow) return;
+  // 1. CATEGORIZE ITEMS
+  const isWeapon = ['knife', 'sword', 'bone_sword'].includes(item.type);
+  const isTool = ['pickaxe', 'axe', 'stone_pickaxe', 'bone_pickaxe'].includes(item.type);
+  const isBow = ['bow', 'bone_bow'].includes(item.type);
+  const isMaterial = ['wood', 'stone', 'glowing_bone'].includes(item.type);
+
+  // If it's none of these, don't draw anything in hand
+  if (!isWeapon && !isTool && !isBow && !isMaterial) return;
 
   ctx.save();
   
-  // 1. Position the weapon at the player's center/shoulder
+  // 2. POSITIONING
   const bob = Math.sin(performance.now() / 120) * 3 * (player.vx !== 0 ? 1 : 0.2);
   const px = player.x + player.w / 2 - camera.x;
-  const py = player.y + player.h / 3 - camera.y - bob;
+  const py = player.y + player.h / 2 - camera.y - bob;
   ctx.translate(px, py);
 
-  // 2. Calculate Angle to Mouse
   const mouseAngle = Math.atan2(
     mouse.y + camera.y - (player.y + player.h / 2),
     mouse.x + camera.x - (player.x + player.w / 2)
   );
 
-  if (isMelee) {
+  // 3. DRAWING LOGIC
+  if (isWeapon || isTool) {
+    const facingLeft = (mouse.x + camera.x < player.x + player.w/2);
+    const baseAngle = mouseAngle + (Math.PI / 2); 
+    
+    // Attack Swing (Mining or Slashing)
     let swingOffset = 0;
     if (attackAnim > 0) {
-      // Swings in an arc relative to the mouse angle
-      // Goes from roughly -1.5 to 1.5 radians (about 170 degrees)
-      swingOffset = -1.5 + (1 - attackAnim) * 3.0;
+      swingOffset = (0.5 - attackAnim) * 3.0; 
+      if (facingLeft) swingOffset *= -1; 
     }
 
-    ctx.rotate(mouseAngle + swingOffset);
+    ctx.rotate(baseAngle + swingOffset);
+    ctx.scale(facingLeft ? -1 : 1, 1);
 
-    // 3. Auto-Flip: If aiming left, flip the weapon drawing so it isn't upside down
-    const facingLeft = (mouse.x + camera.x < player.x + player.w/2);
-    ctx.scale(1, facingLeft ? -1 : 1);
-
-    // Draw Sword/Knife
-    if (item.type === 'sword' || item.type === 'knife') {
-      const bladeLen = (item.type === 'sword') ? 28 : 16;
-      ctx.fillStyle = '#444';
-      ctx.fillRect(0, -2, 4, 4); // Handle
-      ctx.fillRect(2, -6, 2, 12); // Crossguard
-      ctx.fillStyle = '#bdc3c7'; // Blade
-      ctx.fillRect(4, -2, bladeLen, 4);
-    } 
-    // Draw Wood/Stone (Club/Block)
-    else {
-      ctx.fillStyle = (item.type === 'wood') ? '#8B4513' : '#777';
-      ctx.fillRect(0, -4, 15, 8);
-      ctx.fillStyle = 'rgba(0,0,0,0.2)';
-      ctx.fillRect(2, -2, 11, 4);
+    // DRAW THE SPRITE
+    if (item.type === 'bone_sword') {
+        SpriteArt.drawBoneSword(ctx, -16, -40, 32); 
+    } else {
+        // Draw standard tools/swords using their inventory sprite
+        const img = itemImages[item.type] || itemImages[item.type + '_img'];
+        if (img && img.width > 0) {
+            ctx.drawImage(img, -16, -35, 32, 32);
+        } else {
+            // Simple fallback if no image exists
+            ctx.fillStyle = '#777';
+            ctx.fillRect(-2, -30, 4, 30);
+        }
     }
 
   } else if (isBow) {
-    // Standard Bow Logic
     ctx.rotate(mouseAngle);
-    ctx.strokeStyle = '#8B4513';
-    ctx.lineWidth = 3;
+
+    if (item.type === 'bone_bow') {
+        SpriteArt.drawBoneBow(ctx, -2, -16, 32);
+    } else {
+        ctx.strokeStyle = '#8B4513';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(8, 0, 14, -Math.PI/2, Math.PI/2);
+        ctx.stroke();
+    }
+
+    // ANIMATED STRING
+    ctx.strokeStyle = (item.type === 'bone_bow') ? 'rgba(255,255,255,0.9)' : '#eee';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.arc(0, 0, 14, -Math.PI/2, Math.PI/2);
-    ctx.stroke();
-    
-    ctx.strokeStyle = '#eee';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, -14);
-    const pull = (player.isAttacking) ? -10 * (1.0 - attackAnim) : 0;
+    const bowStringX = (item.type === 'bone_bow') ? 10 : 8; 
+    ctx.moveTo(bowStringX, -12);
+    let pull = bowStringX;
+    if (player.isAttacking) {
+        pull = bowStringX - (15 * (1.0 - attackAnim));
+    }
     ctx.lineTo(pull, 0);
-    ctx.lineTo(0, 14);
+    ctx.lineTo(bowStringX, 12);
     ctx.stroke();
+
+  } else if (isMaterial) {
+    // 4. HOLDING MATERIALS (Wood/Stone)
+    // No rotation, no swinging. Just held slightly to the side.
+    const facingLeft = (mouse.x + camera.x < player.x + player.w/2);
+    ctx.translate(facingLeft ? -10 : 10, 0); 
+    
+    if (item.type === 'glowing_bone') {
+        SpriteArt.drawGlowingBone(ctx, -12, -12, 24);
+    } else {
+        // Draw wood or stone block
+        ctx.fillStyle = (item.type === 'wood') ? '#8B4513' : '#777';
+        ctx.fillRect(-8, -8, 16, 16);
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-8, -8, 16, 16);
+    }
   }
 
   ctx.restore();
@@ -1969,7 +2301,7 @@ function drawTile(t, sx, sy, size, now, tx, ty) {
     ctx.stroke();
   }
   // Add this inside your drawTile(t, sx, sy, size, now, tx, ty) function
- else if (t === 6) { 
+  else if (t === 6) { 
   // SPIKE TRAP
     ctx.fillStyle = '#555'; // Grey base
     ctx.fillRect(sx, sy + size - 8, size, 8);
@@ -1980,6 +2312,27 @@ function drawTile(t, sx, sy, size, now, tx, ty) {
       ctx.lineTo(sx + 10 + i * 12, sy + 4);
       ctx.lineTo(sx + 15 + i * 12, sy + size - 8);
       ctx.fill();
+    }
+  }
+  // Add this inside your drawTile function after t === 6
+  else if (t === 7) { 
+    // REINFORCED BONE SPIKES (ID 7)
+    ctx.fillStyle = '#4a3728'; // Darker leather/wood base
+    ctx.fillRect(sx, sy + size - 10, size, 10);
+    
+    // Draw 4 sharper bone spikes
+    ctx.fillStyle = '#e0e0ce'; 
+    for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(sx + 2 + i * 8, sy + size - 10);
+        ctx.lineTo(sx + 6 + i * 8, sy - 4); // They stick up higher than the tile!
+        ctx.lineTo(sx + 10 + i * 8, sy + size - 10);
+        ctx.fill();
+    }
+    // Add a little cyan "glow" dot at the tips if you want them to look magical
+    ctx.fillStyle = '#4de6ff';
+    for (let i = 0; i < 4; i++) {
+        ctx.fillRect(sx + 5 + i * 8, sy - 6, 2, 2);
     }
   }
 }
@@ -2148,8 +2501,23 @@ document.getElementById('debugHealthBtn').addEventListener('click', () => {
   player.health=parseInt(document.getElementById('debugHealth').value)||100;
 });
 document.getElementById('debugSpawnBtn').addEventListener('click', () => {
-  const t=document.getElementById('debugItemType').value, c=parseInt(document.getElementById('debugItemCount').value)||1;
-  addToInventory(t,c); showMessage('Added '+c+'x '+getItemName(t));
+  const t = document.getElementById('debugItemType').value;
+  const c = parseInt(document.getElementById('debugItemCount').value) || 1;
+
+  if (addToInventory(t, c)) {
+    // Check if the item given is the "Key" to new research
+    if (t === 'glowing_bone') {
+      unlockNewRecipes('glowing_bone'); 
+      // This function already contains the showMessage("✨ DISCOVERY...") line
+    }
+
+    // Update the UI so the new items appear in the crafting panel immediately
+    buildInventoryUI();
+    buildRecipes(); 
+
+    // Standard debug notification
+    console.log('Debug: Spawned ' + c + 'x ' + t);
+  }
 });
 document.getElementById('debugSetWave').addEventListener('click', () => {
   waveNum=parseInt(document.getElementById('debugWaveNum').value)||1;
@@ -2173,6 +2541,7 @@ document.getElementById('debugClearInv').addEventListener('click', () => {
 });
 document.getElementById('debugNoclip').addEventListener('change', e => { noclip=e.target.checked; showMessage('Noclip: '+(noclip?'ON':'OFF')); });
 document.getElementById('debugGodmode').addEventListener('change', e => { godmode=e.target.checked; showMessage('Godmode: '+(godmode?'ON':'OFF')); });
+
 
 // ============================================================
 // GAME LOOP
