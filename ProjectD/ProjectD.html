@@ -452,18 +452,14 @@ let inventory = Array.from({length:20}, () => ({type:null, count:0}));
 let selected = 0;
 
 const recipes = [
-  { name: 'Knife',    result: 'knife',    cost: { bone: 2, wood: 1 },        desc: 'Melee — 20 dmg' },
-  { name: 'Sword',    result: 'sword',    cost: { bone: 4, cloth: 2 },       desc: 'Melee — 40 dmg' },
-  { name: 'Bow',      result: 'bow',      cost: { wood: 3, cloth: 2 },       desc: 'Ranged weapon' },
-  { name: 'Arrow',    result: 'arrow',    cost: { bone: 1, wood: 1 },        count: 5, desc: 'x5 arrows' },
-  { name: 'Bandage',  result: 'bandage',  cost: { cloth: 3 },                desc: 'Heal 30 HP' },
-  { name: 'Food',     result: 'food',     cost: { bone: 1 },                 desc: 'Heal 15 HP' },
-  { name: 'Wood Block', result: 'wood',   cost: { stone: 1 },                count: 2, desc: 'Refine stone to wood (Testing)' }, // Modify based on your resource gathering
-  { name: 'Stone Block',result: 'stone',  cost: { wood: 1 },                 count: 2, desc: 'Refine wood to stone (Testing)' },
-  { name: 'Spike Trap', result: 'bone',   cost: { wood: 2, bone: 2 },        desc: 'Defense (Uses bone slot for now)' },
-  { name: 'Medkit',     result: 'bandage',cost: { cloth: 5, food: 2 },       count: 2, desc: 'Advanced Healing x2' },
+  { id: 'bandage', name: 'Bandage', cost: { cloth: 2 }, result: 'bandage' },
+  { id: 'knife', name: 'Knife', cost: { wood: 2, stone: 1 }, result: 'knife' },
+  { id: 'sword', name: 'Sword', cost: { wood: 2, stone: 3 }, result: 'sword' },
+  { id: 'bow', name: 'Bow', cost: { wood: 5, cloth: 2 }, result: 'bow' },
+  { id: 'arrow', name: 'Arrow x5', cost: { wood: 1, stone: 1 }, result: 'arrow', count: 5 },
+  { id: 'spike_trap', name: 'Spike Trap', cost: { wood: 10, stone: 5 }, result: 'spike_trap' },
+  { id: 'food', name: 'Cooked Meat', cost: { bone: 2 }, result: 'food' }
 ];
-
 // ============================================================
 // DOM REFS
 // ============================================================
@@ -515,17 +511,9 @@ function showMessage(text, isError) {
 // ============================================================
 function getItemIcon(type) {
   const m = { 
-    wood:'🪵', 
-    stone:'🪨', 
-    dirt:'🟫', // Added Dirt
-    bone:'🦴', 
-    cloth:'🧶', 
-    knife:'🔪', 
-    sword:'⚔️', 
-    bow:'🏹', 
-    arrow:'↑', 
-    bandage:'🩹', 
-    food:'🍗' 
+    wood:'🪵', stone:'🪨', dirt:'🟫', bone:'🦴', cloth:'🧶', 
+    knife:'🔪', sword:'⚔️', bow:'🏹', arrow:'↑', bandage:'🩹', 
+    food:'🍗', spike_trap:'🪤' 
   };
   return m[type] || '?';
 }
@@ -1150,7 +1138,7 @@ function update(dt) {
   
   if (attackAnim > 0) {
     // Bow draw is slower (1.0), Melee swing is faster (3.5)
-    const animSpeed = (player.currentWeaponType === 'bow') ? 1.0 : 3.5;
+    const animSpeed = (player.currentWeaponType === 'bow') ? 2.5 : 3.5;
     attackAnim -= dt * animSpeed;
     if (attackAnim < 0) attackAnim = 0;
   }
@@ -1288,73 +1276,112 @@ function update(dt) {
     }
   }
 
-  // ---------- 7. ARROWS ----------
-  for (let i = arrows.length - 1; i >= 0; i--) {
-    const a = arrows[i];
-    a.x += a.vx * dt;
-    a.y += a.vy * dt;
-    a.vy += 500 * dt; // Arrow gravity
-    a.life -= dt;
+// ---------- 7. ARROWS ----------
+    for (let i = arrows.length - 1; i >= 0; i--) {
+        const a = arrows[i];
+        a.life -= dt;
+        a.vy += 450 * dt; // Gravity
 
-    const tx = Math.floor(a.x / TILE);
-    const ty = Math.floor(a.y / TILE);
-    
-    let hit = false;
-    if (world[ty] && world[ty][tx] && world[ty][tx] > 0) hit = true;
+        // Calculate total distance to move this frame
+        let moveX = a.vx * dt;
+        let moveY = a.vy * dt;
+        let distance = Math.hypot(moveX, moveY);
+        
+        // Move 1 pixel at a time for perfect precision
+        let hit = false;
+        for (let d = 0; d < distance; d++) {
+            a.x += moveX / distance;
+            a.y += moveY / distance;
 
-    for (let j = zombies.length - 1; j >= 0; j--) {
-      const z = zombies[j];
-      if (a.x > z.x && a.x < z.x + z.w && a.y > z.y && a.y < z.y + z.h) {
-        z.health -= a.damage;
-        z.stunTimer = 0.2;
-        z.vx += (a.vx * 0.2); 
-        hit = true;
-        break;
-      }
+            const tx = Math.floor(a.x / TILE);
+            const ty = Math.floor(a.y / TILE);
+
+            // Check for solid world collision
+            if (world[ty] && world[ty][tx]) {
+                const tid = world[ty][tx];
+                // 1=Dirt, 2=Grass, 4=Stone, 5=Wood Wall
+                if (tid === 1 || tid === 2 || tid === 4 || tid === 5) {
+                    hit = true;
+                    // Back up exactly 1 pixel so it's not buried
+                    a.x -= moveX / distance;
+                    a.y -= moveY / distance;
+                    break;
+                }
+            }
+
+            // Check for Zombie collision
+            for (let j = zombies.length - 1; j >= 0; j--) {
+                const z = zombies[j];
+                if (a.x > z.x && a.x < z.x + z.w && a.y > z.y && a.y < z.y + z.h) {
+                    z.health -= a.damage;
+                    z.stunTimer = 0.2;
+                    z.vx += (a.vx * 0.2);
+                    hit = true;
+                    break;
+                }
+            }
+            if (hit) break;
+        }
+
+        if (hit || a.life <= 0) {
+            arrows.splice(i, 1);
+        }
     }
-    if (hit || a.life <= 0) arrows.splice(i, 1);
-  }
 
   // ---------- 8. ZOMBIES ----------
-  for (let i=zombies.length-1; i>=0; i--) {
+  for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
+    
+    // Death & Bone Drop
     if (z.health <= 0) {
-      drops.push({ x:z.x+4, y:z.y, vy:-80, vx:(Math.random()-0.5)*80, type:'bone' });
-      zombies.splice(i,1);
+      drops.push({ x: z.x + 4, y: z.y, vy: -80, vx: (Math.random() - 0.5) * 80, type: 'bone' });
+      zombies.splice(i, 1);
       nightKillCount++;
       continue;
     }
 
     if (z.stunTimer > 0) { z.stunTimer -= dt; continue; }
 
-    const dir = (player.x + player.w/2) - (z.x + z.w/2);
+    // --- SPIKE TRAP LOGIC ---
+    // Check the tile the zombie is currently standing on
+    const gridX = Math.floor((z.x + z.w / 2) / TILE);
+    const gridY = Math.floor((z.y + z.h - 1) / TILE);
+    if (world[gridY] && world[gridY][gridX] === 6) {
+      z.health -= 20 * dt; // Deals 20 damage per second while standing on it
+      z.speed = 40;        // Slow them down significantly
+    } else {
+      z.speed = 80;        // Reset to normal speed (or whatever your default is)
+    }
+
+    // Movement Logic
+    const dir = (player.x + player.w / 2) - (z.x + z.w / 2);
     z.vx = Math.abs(dir) > 4 ? Math.sign(dir) * z.speed : 0;
     if (z.jumpCooldown > 0) z.jumpCooldown -= dt;
 
-    z.vy += 1600*dt;
-    z.x += z.vx*dt;
+    z.vy += 1600 * dt;
+    z.x += z.vx * dt;
 
-    // Basic zombie collision and auto-jump
-    const zl=Math.floor(z.x/TILE), zr=Math.floor((z.x+z.w-1)/TILE);
-    const zt=Math.floor(z.y/TILE), zb=Math.floor((z.y+z.h-1)/TILE);
-    if (z.vx>0&&solid(zr,zt)) { z.x=zr*TILE-z.w; if(z.onGround) z.vy=-450; }
-    if (z.vx<0&&solid(zl,zt)) { z.x=(zl+1)*TILE; if(z.onGround) z.vy=-450; }
+    // Collision & Auto-Jump
+    const zl = Math.floor(z.x / TILE), zr = Math.floor((z.x + z.w - 1) / TILE);
+    const zt = Math.floor(z.y / TILE);
+    if (z.vx > 0 && solid(zr, zt)) { z.x = zr * TILE - z.w; if (z.onGround) z.vy = -450; }
+    if (z.vx < 0 && solid(zl, zt)) { z.x = (zl + 1) * TILE; if (z.onGround) z.vy = -450; }
 
-    z.y += z.vy*dt;
+    z.y += z.vy * dt;
     z.onGround = false;
-    const zb2 = Math.floor((z.y+z.h-1)/TILE);
-    const zl2 = Math.floor(z.x/TILE);
-    if (solid(zl2, zb2)) { z.y=zb2*TILE-z.h; z.vy=0; z.onGround=true; }
+    const zb2 = Math.floor((z.y + z.h - 1) / TILE);
+    const zl2 = Math.floor(z.x / TILE);
+    if (solid(zl2, zb2)) { z.y = zb2 * TILE - z.h; z.vy = 0; z.onGround = true; }
 
     // Damage player
-    if (z.x < player.x+player.w && z.x+z.w > player.x && z.y < player.y+player.h && z.y+z.h > player.y) {
-       z.attackTimer -= dt;
-       if (z.attackTimer <= 0 && !godmode && player.invincibleTimer <= 0) {
-         player.health -= z.damage;
-         player.invincibleTimer = 0.5;
-         z.attackTimer = z.attackCooldown;
-         if (player.health <= 0) onPlayerDeath();
-       }
+    if (z.x < player.x + player.w && z.x + z.w > player.x && z.y < player.y + player.h && z.y + z.h > player.y) {
+      z.attackTimer -= dt;
+      if (z.attackTimer <= 0 && !godmode && player.invincibleTimer <= 0) {
+        player.health -= z.damage;
+        player.invincibleTimer = 0.5;
+        z.attackTimer = z.attackCooldown;
+        if (player.health <= 0) onPlayerDeath();
+      }
     }
   }
 
@@ -1393,7 +1420,6 @@ let mouse = { x: 0, y: 0, down: false };
 let buildTimer = 0;
 const BUILD_COOLDOWN = 0.15;
 
-// This fixes the "offset" problem and the instant-placement bug
 window.addEventListener('mousemove', e => { 
   const rect = canvas.getBoundingClientRect();
   mouse.x = e.clientX - rect.left; 
@@ -1402,8 +1428,19 @@ window.addEventListener('mousemove', e => {
 
 window.addEventListener('mousedown', (e) => {
   if (gameState !== STATE.PLAYING && gameState !== STATE.INVENTORY) return;
+  
+  // Update weapon type so logic knows we are using a bow
+  player.currentWeaponType = hotbar[selected]?.type || null;
+
   if (e.button === 0) { 
     mouse.down = true; 
+    
+    // BOW CHARGE TRIGGER: Start the animation at 1.0 (full) 
+    // It will then count down to 0 in your existing update(dt)
+    if (player.currentWeaponType === 'bow' && attackTimer <= 0) {
+      attackAnim = 1.0; 
+      player.isAttacking = true;
+    }
   } else if (e.button === 2) {
     mouseRight = true;
   }
@@ -1411,15 +1448,19 @@ window.addEventListener('mousedown', (e) => {
 
 window.addEventListener('mouseup', (e) => {
   if (e.button === 0) { 
-    mouse.down = false; // CRITICAL FIX: Stops auto-placing/swinging
-    player.isAttacking = false;
+    mouse.down = false; 
     
+    // BOW RELEASE: This checks how much the animation decreased
     if (player.currentWeaponType === 'bow' && attackTimer <= 0) {
+      // strength is how far away from 1.0 the animation got
       const strength = Math.min(1.0, 1.0 - attackAnim);
       if (strength > 0.1) shootArrow(strength); 
+      
       attackTimer = 0.8; 
       attackAnim = 0; 
     }
+    
+    player.isAttacking = false;
   } else if (e.button === 2) {
     mouseRight = false;
     mining.active = false;
@@ -1427,13 +1468,15 @@ window.addEventListener('mouseup', (e) => {
   }
 });
 
+window.addEventListener('contextmenu', e => e.preventDefault());
+
 // Prevent right-click menu
 window.addEventListener('contextmenu', e => e.preventDefault());
 
 function handleMouseActions(dt) {
   if (gameState !== STATE.PLAYING) return;
   
-  // Update timers
+  // Update build timer
   if (buildTimer > 0) buildTimer -= dt;
   
   // ONLY act if the mouse is actually being held down
@@ -1441,7 +1484,7 @@ function handleMouseActions(dt) {
 
   const item = hotbar[selected];
   const type = item?.type;
-  if (!type || type === 'bow') return;
+  if (!type) return;
 
   // Calculate Grid Position
   const tx = Math.floor((mouse.x + camera.x) / TILE);
@@ -1451,25 +1494,28 @@ function handleMouseActions(dt) {
 
   const dist = Math.hypot((tx * TILE + TILE/2) - px, (ty * TILE + TILE/2) - py);
 
-  // 2. AUTOMATIC BUILDING
-  const isBuildingMaterial = ['wood', 'stone', 'dirt'].includes(type);
+  // 1. BUILDING LOGIC (Using item instead of selectedItem)
+  const isBuildingMaterial = ['wood', 'stone', 'dirt', 'spike_trap'].includes(type);
+  
   if (isBuildingMaterial && item.count > 0) {
     if (dist <= MINE_RANGE && world[ty] && world[ty][tx] === 0 && buildTimer <= 0) {
       if (type === 'wood') world[ty][tx] = 5;
       else if (type === 'stone') world[ty][tx] = 4;
       else if (type === 'dirt') world[ty][tx] = 1;
+      else if (type === 'spike_trap') world[ty][tx] = 6; 
 
       item.count--;
       if (item.count <= 0) { item.type = null; item.count = 0; }
 
-      buildTimer = BUILD_COOLDOWN; // Prevents dumping whole stack
+      buildTimer = BUILD_COOLDOWN; 
       updateHotbarDOM();
       if (typeof buildInventoryUI === 'function') buildInventoryUI();
     }
+    return; // Stop here if building
   }
 
-  // 3. AUTOMATIC SWINGING (Melee)
-  if (attackTimer <= 0 && !isBuildingMaterial) {
+  // 2. MELEE ATTACK LOGIC
+  if (attackTimer <= 0 && type !== 'bow') {
     attackTimer = ATTACK_COOLDOWN;
     attackAnim = 1;
 
@@ -1921,6 +1967,20 @@ function drawTile(t, sx, sy, size, now, tx, ty) {
     ctx.moveTo(sx + size/2, sy + 2);
     ctx.lineTo(sx + size/2, sy + size - 2);
     ctx.stroke();
+  }
+  // Add this inside your drawTile(t, sx, sy, size, now, tx, ty) function
+ else if (t === 6) { 
+  // SPIKE TRAP
+    ctx.fillStyle = '#555'; // Grey base
+    ctx.fillRect(sx, sy + size - 8, size, 8);
+    ctx.fillStyle = '#bbb'; // Spike color
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(sx + 5 + i * 12, sy + size - 8);
+      ctx.lineTo(sx + 10 + i * 12, sy + 4);
+      ctx.lineTo(sx + 15 + i * 12, sy + size - 8);
+      ctx.fill();
+    }
   }
 }
 
