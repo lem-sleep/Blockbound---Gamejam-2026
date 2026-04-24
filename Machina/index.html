@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MACHINA — Survive the Factory Night</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #0a0a0a;
+    overflow: hidden;
+    font-family: "Courier New", monospace;
+    color: #cfcfcf;
+  }
+  #game-container {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas { display: block; image-rendering: pixelated; }
+  .watermark {
+    position: fixed;
+    left: 10px;
+    bottom: 8px;
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: #555;
+    z-index: 9999;
+    user-select: none;
+    pointer-events: none;
+    text-shadow: 0 0 4px #000;
+  }
+</style>
+</head>
+<body>
+<div id="game-container"></div>
+<div class="watermark">MACHINA</div>
+
+<!-- Phaser 3 -->
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+
+<!-- Global namespace -->
+<script>window.MACHINA = window.MACHINA || {};</script>
+
+<!-- FIX 2: suppress browser default for Tab (and disable context menu on right click globally) -->
+<script>
+(function () {
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'Tab') e.preventDefault();
+  }, { capture: true });
+  window.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+})();
+</script>
+
+<!-- Utils -->
+<script src="src/utils/ProceduralTextures.js"></script>
+<script src="src/utils/AudioManager.js"></script>
+<script src="src/utils/InputHandler.js"></script>
+<script src="src/utils/ParticlePool.js"></script>
+
+<!-- Entities -->
+<script src="src/entities/Projectile.js"></script>
+<script src="src/entities/Player.js"></script>
+<script src="src/entities/Zombie.js"></script>
+
+<!-- Machines -->
+<script src="src/machines/MachineBase.js"></script>
+<script src="src/machines/Barricade.js"></script>
+<script src="src/machines/AutoTurret.js"></script>
+<script src="src/machines/Generator.js"></script>
+<script src="src/machines/CraftingBench.js"></script>
+<script src="src/machines/AlarmTrap.js"></script>
+
+<!-- Systems -->
+<script src="src/systems/SaveManager.js"></script>
+<script src="src/systems/ResourceSystem.js"></script>
+<script src="src/systems/PowerGrid.js"></script>
+<script src="src/systems/ZombieSpawner.js"></script>
+<script src="src/systems/WaveManager.js"></script>
+
+<!-- Scenes -->
+<script src="src/scenes/BootScene.js"></script>
+<script src="src/scenes/MainMenuScene.js"></script>
+<script src="src/scenes/GameScene.js"></script>
+<script src="src/scenes/HUDScene.js"></script>
+<script src="src/scenes/CraftingUIScene.js"></script>
+<script src="src/scenes/GameOverScene.js"></script>
+
+<!-- Main entry -->
+<script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "machina",
+  "version": "1.0.0",
+  "description": "MACHINA — Survive the Factory Night. A side-scrolling zombie survival game with machine-building mechanics.",
+  "scripts": {
+    "start": "live-server --port=8080 --no-browser",
+    "serve": "npx http-server -p 8080 -c-1"
+  },
+  "keywords": ["phaser", "html5", "game", "zombie", "survival"],
+  "license": "MIT"
+}
