@@ -108,6 +108,6 @@ Machina/
 
 ## Credits
 
-Built solo for Blockbound Game Jam 2026.
+Built alongside Tim for Blockbound Game Jam 2026.
 
 Phaser 3 — <https://phaser.io/> (loaded from jsDelivr CDN).
